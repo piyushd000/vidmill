@@ -46,7 +46,7 @@ def run(args: argparse.Namespace) -> None:
     ass_path.write_text(ass, encoding="utf-8")
 
     out = j.apath("captioned.mp4")
-    util.run_ffmpeg(src, ["-vmill", f"ass={ass_path.name}",
+    util.run_ffmpeg(src, ["-vf", f"ass={ass_path.name}",
                           "-c:v", "libx264", "-crf", "20", "-preset", "veryfast",
                           "-c:a", "copy"], out, cwd=j.path)
     out_info = util.probe_info(out)

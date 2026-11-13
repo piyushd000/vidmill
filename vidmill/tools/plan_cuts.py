@@ -158,7 +158,8 @@ def find_false_starts(j, duration: float) -> list[dict]:
     out, i, n = [], 0, len(words)
     while i < n:
         matched = False
-        for k in range(1, 7):
+        # k >= 2: real retakes repeat phrases; single-word repeats ("no, no") are natural stutters
+        for k in range(2, 7):
             if i + 2 * k > n:
                 break
             a = " ".join(w["word"] for w in words[i:i + k]).lower().strip(".,!?")

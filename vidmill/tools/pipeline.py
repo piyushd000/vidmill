@@ -11,6 +11,7 @@ interrupted run (or an AI agent inspecting between steps) can continue.
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 from .. import job as jobmod
 from .. import util
@@ -55,6 +56,16 @@ def run(args: argparse.Namespace) -> None:
     jdir = args.job
     try:
         j = jobmod.Job.load(jdir)
+        if args.video:
+            cur = Path(j.data.get("video", "")).resolve()
+            new = Path(args.video).expanduser().resolve()
+            if new != cur:
+                if args.force or not j.has("probe.json"):
+                    j = jobmod.Job.create(jdir, new, copy=False)
+                    print(f"[rebind] job now tracks {new}")
+                else:
+                    raise util.ToolError(
+                        f"job {jdir} already tracks {cur} — pass --force to rebind it to {new}")
     except util.ToolError:
         if not args.video:
             raise util.ToolError(f"no job at {jdir} and no video given")
@@ -82,6 +93,7 @@ def run(args: argparse.Namespace) -> None:
         ns = step_args(step, argv)
         ns = apply_opts(ns, step, opts.get(step, []))
         _registry()[step].run(ns)
+        j = jobmod.Job.load(jdir)  # tools save their own job state — pick it up
     print("pipeline done — see `vmill status --job " + str(j.path) + "`")
 
 
