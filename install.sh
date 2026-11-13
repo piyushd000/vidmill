@@ -6,7 +6,20 @@ cd "$(dirname "$0")"
 say() { printf '\n\033[1;36m==>\033[0m %s\n' "$*"; }
 
 say "checking prerequisites"
-command -v ffmpeg >/dev/null || { echo "ffmpeg is required: sudo apt install ffmpeg (or brew install ffmpeg)"; exit 1; }
+if ! command -v ffmpeg >/dev/null; then
+  say "ffmpeg not found — installing it for you"
+  if command -v apt-get >/dev/null; then
+    sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+  elif command -v brew >/dev/null; then
+    brew install ffmpeg
+  elif command -v dnf >/dev/null; then
+    sudo dnf install -y ffmpeg
+  elif command -v pacman >/dev/null; then
+    sudo pacman -Sy --noconfirm ffmpeg
+  else
+    echo "could not auto-install ffmpeg — install it from https://ffmpeg.org and re-run"; exit 1
+  fi
+fi
 command -v python3 >/dev/null || { echo "python3 is required"; exit 1; }
 python3 - <<'EOF' || { echo "python >= 3.10 is required"; exit 1; }
 import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)
