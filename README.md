@@ -200,8 +200,12 @@ That's the point. Every tool is a stable CLI with JSON output
 
 ## License
 
-vidmill is free software: you can redistribute it and/or modify it
-under the terms of the **GNU Affero General Public License v3.0 or
-later** ([LICENSE](LICENSE)). If you build something on vidmill —
-including a hosted service — your version must also be released under
-the same terms. See the [GNU AGPL FAQ](https://www.gnu.org/licenses/agpl-3.0.en.html#faq) for details.
+vidmill — the all-in-one AI video editor for the terminal.
+Copyright (C) 2026 vidmill contributors.
+
+This is free software: you can redistribute it and/or modify it under
+the terms of the **GNU Affero General Public License v3.0 or later**
+([LICENSE](LICENSE)). If you build something on vidmill — including a
+hosted service — your version must also be released under the same
+terms, so improvements always flow back to everyone. See the
+[GNU AGPL FAQ](https://www.gnu.org/licenses/agpl-3.0.en.html#faq) for details.
