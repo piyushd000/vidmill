@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 from difflib import SequenceMatcher
+from pathlib import Path
 
 from .. import job as jobmod
 from .. import util
@@ -27,6 +28,12 @@ def add_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--pad", type=float, default=0.15, help="seconds kept around each speech block")
     p.add_argument("--min-keep", type=float, default=0.40, help="drop keep-segments shorter than this")
     p.add_argument("--gap", type=float, default=0.35, help="word/silence gap that counts as a pause")
+    p.add_argument("--freeze", action="store_true",
+                   help="also remove still/no-movement video segments (freezedetect)")
+    p.add_argument("--freeze-db", type=float, default=-60.0, help="freezedetect noise level")
+    p.add_argument("--freeze-min", type=float, default=0.5, help="min freeze duration to remove")
+    p.add_argument("--freeze-quiet-only", action="store_true",
+                   help="only drop freezes that are also quiet (never cut speech)")
     p.add_argument("--cut", action="append", default=[], metavar="START:END",
                    help="force-remove a range in seconds (repeatable)")
     p.add_argument("--plan-file", help="merge cuts from an external plan json")
@@ -42,6 +49,16 @@ def run(args: argparse.Namespace) -> None:
     duration = info["duration"]
 
     silences = detect_silences(j, src, duration, args)
+    if args.freeze:
+        freezes = ff_freezes(src, args.freeze_db, args.freeze_min, duration)
+        if args.freeze_quiet_only and j.has("transcript.json"):
+            gaps = set(silences)
+            freezes = intersect(freezes, sorted(gaps))
+            print(f"freezedetect: keeping {len(freezes)} still-but-quiet segment(s) "
+                  f"(speech-bearing freezes preserved)")
+        if freezes:
+            print(f"freezedetect: {len(freezes)} still segment(s) marked for removal")
+        silences = merge(silences + freezes)
     speech = complement(silences, duration)
 
     keeps = merge([(max(0.0, s - args.pad), min(duration, e + args.pad)) for s, e in speech])
@@ -178,6 +195,29 @@ def ff_silences(src, threshold_db: float, min_gap: float, duration: float) -> li
     return merge(out)
 
 
+def ff_freezes(src, noise_db: float, min_dur: float, duration: float) -> list:
+    """No-movement (frozen picture) segments via ffmpeg freezedetect."""
+    p = util.run([util.FFMPEG, "-hide_banner", "-nostdin", "-i", str(src),
+                  "-vf", f"freezedetect=n={noise_db}dB:d={min_dur}",
+                  "-f", "null", "-"], check=False, quiet=True)
+    out = []
+    pending = None
+    for line in (p.stderr or "").splitlines():
+        line = line.strip()
+        if "freeze_start:" in line:
+            pending = float(line.rsplit(":", 1)[1])
+        elif "freeze_duration:" in line and pending is not None:
+            d = float(line.rsplit(":", 1)[1])
+            out.append((pending, min(duration, pending + d)))
+            pending = None
+        elif "freeze_end:" in line and pending is not None:
+            out.append((pending, float(line.rsplit(":", 1)[1])))
+            pending = None
+    if pending is not None:  # video ends while frozen
+        out.append((pending, duration))
+    return merge(out)
+
+
 def flatten_words(j) -> list[dict]:
     words = []
     for seg in util.read_json(j.apath("transcript.json")).get("segments", []):
@@ -213,6 +253,21 @@ def find_false_starts(j, duration: float, src=None) -> list[dict]:
                 break
         if not matched:
             i += 1
+    return out
+
+
+def intersect(a: list[tuple[float, float]], b: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """Ranges present in both sorted lists."""
+    out, i, j = [], 0, 0
+    while i < len(a) and j < len(b):
+        lo = max(a[i][0], b[j][0])
+        hi = min(a[i][1], b[j][1])
+        if lo < hi:
+            out.append((lo, hi))
+        if a[i][1] < b[j][1]:
+            i += 1
+        else:
+            j += 1
     return out
 
 

@@ -1,6 +1,6 @@
 """Tool registry: tool name -> module. Each module defines PURPOSE, add_args(), run()."""
 
-from . import apply_cuts, audio_clean, captions, export, face, pipeline, plan_cuts, probe, transcribe
+from . import apply_cuts, audio_clean, auto, captions, export, face, music, pipeline, plan_cuts, probe, transcribe
 
 REGISTRY = {
     "probe": probe,
@@ -10,6 +10,8 @@ REGISTRY = {
     "clean": audio_clean,
     "captions": captions,
     "face": face,
+    "music": music,
+    "auto": auto,
     "export": export,
     "pipeline": pipeline,
 }

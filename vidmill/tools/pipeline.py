@@ -75,10 +75,17 @@ def run(args: argparse.Namespace) -> None:
     for o in args.opt:
         try:
             step, kv = o.split(":", 1)
-            key, val = kv.split("=", 1)
         except ValueError as e:
             raise util.ToolError(f"--opt expects STEP:KEY=VALUE, got '{o}'") from e
-        opts.setdefault(step, []).extend(["--" + key.replace("_", "-"), val])
+        if "=" in kv:
+            key, val = kv.split("=", 1)
+        else:
+            key, val = kv, "@"  # bare store_true flag, e.g. plan:@freeze
+        key = key.lstrip("@")
+        if val == "@":  # bare store_true flag: plan:@freeze or plan:freeze=@
+            opts.setdefault(step, []).append("--" + key.replace("_", "-"))
+        else:
+            opts.setdefault(step, []).extend(["--" + key.replace("_", "-"), val])
 
     for step in steps:
         artifact = STEP_ARTIFACT[step]
