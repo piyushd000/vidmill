@@ -174,11 +174,11 @@ measures.
 
   When you convey a covered work, you waive any legal power to forbid
 circumvention of technological measures to the extent such circumvention
-is effected by exercising rights under this License with respect to the
-covered work, and you disclaim any intention to limit operation or
+is effected by exercising rights under this License with respect to
+the covered work, and you disclaim any intention to limit operation or
 modification of the work as a means of enforcing, against the work's
 users, your or third parties' legal rights to forbid circumvention of
-such technological measures.
+technological measures.
 
   4. Conveying Verbatim Copies.
 
@@ -286,9 +286,14 @@ included in conveying the object code work.
 tangible personal property which is normally used for personal, family,
 or household purposes, or (2) anything designed or sold for incorporation
 into a dwelling.  In determining whether a product is a consumer product,
-doubtful cases shall be resolved in favor of coverage.  For example,
-a product received as a gift is a consumer product regardless of
-whether the product was received as part of a commercial transaction.
+doubtful cases shall be resolved in favor of coverage.  For a particular
+product received by a particular user, "normally used" refers to a
+typical or common use of that class of product, regardless of the status
+of the particular user or of the way in which the particular user
+actually uses, or expects or is expected to use, the product.  A product
+is a consumer product regardless of whether the product has substantial
+commercial, industrial or non-consumer uses, unless such uses represent
+the only significant mode of use of the product.
 
   "Installation Information" for a User Product means any methods,
 procedures, authorization keys, or other information required to install
@@ -296,7 +301,7 @@ and execute modified versions of a covered work in that User Product from
 a modified version of its Corresponding Source.  The information must
 suffice to ensure that the continued functioning of the modified object
 code is in no case prevented or interfered with solely because
-modification has not been made.
+modification has been made.
 
   If you convey an object code work under this section in, or with, or
 specifically for use in, a User Product, and the conveying occurs as
@@ -435,8 +440,8 @@ for enforcing compliance by third parties with this License.
 
   An "entity transaction" is a transaction transferring control of an
 organization, or substantially all assets of one, or subdividing an
-entity, or merging organizations.  If propagation of a covered work
-results from an entity transaction, each party to that
+organization, or merging organizations.  If propagation of a covered
+work results from an entity transaction, each party to that
 transaction who receives a copy of the work also receives whatever
 licenses to the work the party's predecessor in interest had or could
 give under the previous paragraph, plus a right to possession of the
@@ -508,10 +513,10 @@ specifically granted under this License.  You may not convey a covered
 work if you are a party to an arrangement with a third party that is
 in the business of distributing software, under which you make payment
 to the third party based on the extent of your activity of conveying
-the work, and under which the third party grants, to any of the parties
-who would receive the covered work from you, a discriminatory
+the work, and under which the third party grants, to any of the
+parties who would receive the covered work from you, a discriminatory
 patent license (a) in connection with copies of the covered work
-conveyed by you, or copies made from those copies, or (b) primarily
+conveyed by you (or copies made from those copies), or (b) primarily
 for and in connection with specific products or compilations that
 contain the covered work, unless you entered into that arrangement,
 or that patent license was granted, prior to 28 March 2007.
