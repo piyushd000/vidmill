@@ -32,9 +32,18 @@ def run(args: argparse.Namespace) -> None:
     src = j.current_video()
     print(f"transcribing {src.name} with {args.model} (this can take a few minutes)...")
 
+    # decode via ffmpeg -> 16k mono float32 (avoids PyAV, works with any codec)
+    import numpy as np
+    raw = j.apath("audio_16k.f32")
+    util.run([util.FFMPEG, "-hide_banner", "-loglevel", "error", "-y", "-nostdin",
+              "-i", str(src), "-vn", "-f", "f32le", "-acodec", "pcm_f32le",
+              "-ac", "1", "-ar", "16000", str(raw)], quiet=True)
+    audio = np.fromfile(raw, dtype=np.float32)
+    raw.unlink(missing_ok=True)
+
     model = WhisperModel(args.model, device=args.device, compute_type="auto")
     segments_iter, info = model.transcribe(
-        str(src), language=args.language, beam_size=args.beam,
+        audio, language=args.language, beam_size=args.beam,
         word_timestamps=True, vad_filter=True,
         vad_parameters={"min_silence_duration_ms": 300},
         condition_on_previous_text=False,
