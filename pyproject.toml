@@ -1,14 +1,14 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "vidmill"
 version = "0.1.0"
-description = "Open-source AI video editing toolkit: FFmpeg, Faster-Whisper, FaceFusion and DeepFilterNet as connected CLI tools any human or AI agent can orchestrate."
+description = "The all-in-one AI video editor for the terminal: transcription, smart cutting, studio audio, captions, face swap and delivery presets — free, open source and fully local."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { file = "LICENSE" }
+license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
 authors = [{ name = "vidmill contributors" }]
 keywords = ["video", "editing", "ai", "transcription", "captions", "face-swap", "cli", "agent-tools", "video-editor"]
@@ -17,7 +17,6 @@ classifiers = [
   "Environment :: Console",
   "Intended Audience :: Developers",
   "Intended Audience :: End Users/Desktop",
-  "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
   "Operating System :: POSIX :: Linux",
   "Operating System :: MacOS",
   "Programming Language :: Python :: 3",
