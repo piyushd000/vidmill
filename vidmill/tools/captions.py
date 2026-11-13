@@ -11,6 +11,7 @@ import argparse
 
 from .. import job as jobmod
 from .. import util
+from .plan_cuts import remap
 
 PURPOSE = "burn word-synced captions -> captioned.mp4"
 
@@ -54,20 +55,6 @@ def run(args: argparse.Namespace) -> None:
              {"captions.ass": {"lines": len(words) // max(1, args.words_per_line) + 1},
               "captioned.mp4": {"duration": round(out_info["duration"], 2)}})
     print(f"captioned.mp4  {util.fmt_ts(out_info['duration'])}  style={args.style}")
-
-
-def remap(t: float, plan: dict | None) -> float:
-    """Original-video time -> edited-video time, via the cut plan."""
-    if not plan or not plan.get("keep_seconds"):
-        return t
-    acc = 0.0
-    for s, e in plan["keep_seconds"]:
-        if t < s:  # fell into a removed gap before this segment
-            return round(acc, 3)
-        if t <= e:
-            return round(acc + (t - s), 3)
-        acc += e - s
-    return round(acc, 3)
 
 
 def build_ass(words, wpl: int, fontsize: int, style: str, w: int, h: int) -> str:

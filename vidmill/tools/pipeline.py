@@ -87,9 +87,9 @@ def run(args: argparse.Namespace) -> None:
             continue
         print(f"[run ] {step}")
         if step == "probe":
-            argv = [args.video or j.data.get("video", ""), args.job]
+            argv = [args.video or j.data.get("video", ""), "--job", args.job]
         else:
-            argv = [args.job]
+            argv = ["--job", args.job]
         ns = step_args(step, argv)
         ns = apply_opts(ns, step, opts.get(step, []))
         _registry()[step].run(ns)

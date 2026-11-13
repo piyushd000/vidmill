@@ -30,9 +30,7 @@ def run(args: argparse.Namespace) -> None:
 
     j = jobmod.Job.load(args.job)
     src = j.current_video()
-    print(f"transcribing {src.name} with {args.model} (this can take a few minutes)...")
-
-    # decode via ffmpeg -> 16k mono float32 (avoids PyAV, works with any codec)
+    print(f"transcribing {src.name} with {args.model} (this can take a few minutes)...")    # decode via ffmpeg -> 16k mono float32 (avoids PyAV, works with any codec)
     import numpy as np
     raw = j.apath("audio_16k.f32")
     util.run([util.FFMPEG, "-hide_banner", "-loglevel", "error", "-y", "-nostdin",
@@ -65,6 +63,7 @@ def run(args: argparse.Namespace) -> None:
         "model": args.model,
         "language": getattr(info, "language", None),
         "duration": getattr(info, "duration", None) or j.data["info"]["duration"],
+        "video": str(src),
         "words": words_count,
         "segments": segments,
     }

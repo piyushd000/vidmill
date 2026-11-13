@@ -59,7 +59,7 @@ def run(args: argparse.Namespace) -> None:
 
     suggestions = []
     if not args.no_heuristic and j.has("transcript.json"):
-        suggestions = find_false_starts(j, duration)
+        suggestions = find_false_starts(j, duration, src=src)
     if args.mistakes:
         for s in suggestions:
             cuts = merge_ranges(cuts + [{"from_s": s["from_s"], "to_s": s["to_s"], "reason": s["why"]}])
@@ -105,12 +105,48 @@ def run(args: argparse.Namespace) -> None:
             print(f"  {util.fmt_ts(s_['from_s'])}-{util.fmt_ts(s_['to_s'])}  {s_['why']}")
 
 
+# ------------------------------------------------------------- timeline remap
+
+def remap(t: float, plan: dict | None) -> float:
+    """Original-video time -> edited-video time, via a cut plan's keep_seconds."""
+    if not plan or not plan.get("keep_seconds"):
+        return t
+    acc = 0.0
+    for s, e in plan["keep_seconds"]:
+        if t < s:  # fell into a removed gap before this segment
+            return round(acc, 3)
+        if t <= e:
+            return round(acc + (t - s), 3)
+        acc += e - s
+    return round(acc, 3)
+
+
+def words_for_video(j, src) -> list[dict]:
+    """Transcript words, remapped if the transcript was timed on a different
+    video than `src` (e.g. planning a cut.mp4 with a transcript from the source)."""
+    words = flatten_words(j)
+    if not words:
+        return words
+    tr = j.latest("transcript.json")
+    tr_video = (tr.get("meta") or {}).get("video")
+    if not tr_video:
+        try:
+            tr_video = util.read_json(j.apath("transcript.json")).get("video")
+        except Exception:
+            tr_video = None
+    if tr_video and Path(tr_video).resolve() != Path(src).resolve() and j.has("cut_plan.json"):
+        prev = util.read_json(j.apath("cut_plan.json"))
+        if prev.get("keep_seconds"):
+            words = [dict(w, start=remap(w["start"], prev), end=remap(w["end"], prev)) for w in words]
+    return words
+
+
 # ---------------------------------------------------------------- detection
 
 def detect_silences(j, src, duration, args) -> list[tuple[float, float]]:
     """Prefer transcript word gaps; fall back to ffmpeg silencedetect."""
     if j.has("transcript.json"):
-        words = flatten_words(j)
+        words = words_for_video(j, src)
         if words:
             gaps = []
             t = 0.0
@@ -128,7 +164,7 @@ def detect_silences(j, src, duration, args) -> list[tuple[float, float]]:
 def ff_silences(src, threshold_db: float, min_gap: float, duration: float) -> list:
     p = util.run([util.FFMPEG, "-hide_banner", "-nostdin", "-i", str(src),
                   "-af", f"silencedetect=noise={threshold_db}dB:d={min_gap}",
-                  "-f", "null", "-"], check=False)
+                  "-f", "null", "-"], check=False, quiet=True)
     out = []
     starts = []
     for line in (p.stderr or "").splitlines():
@@ -152,9 +188,9 @@ def flatten_words(j) -> list[dict]:
     return words
 
 
-def find_false_starts(j, duration: float) -> list[dict]:
+def find_false_starts(j, duration: float, src=None) -> list[dict]:
     """Repeated phrases spoken back-to-back (retakes / self-corrections)."""
-    words = flatten_words(j)
+    words = words_for_video(j, src) if src else flatten_words(j)
     out, i, n = [], 0, len(words)
     while i < n:
         matched = False
