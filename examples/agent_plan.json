@@ -1,0 +1,9 @@
+{
+  "_comment": "Agent-authored cut plan: `vf plan --job myedit --plan-file examples/agent_plan.json`",
+  "cuts": [
+    { "from_s": 60.98, "to_s": 63.30,
+      "why": "false start: 'get away with it' self-corrected to 'go forward with it'" },
+    { "from_s": 100.0, "to_s": 103.5,
+      "why": "digression about receipts — cut for a tighter story" }
+  ]
+}

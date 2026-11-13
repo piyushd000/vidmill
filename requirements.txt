@@ -1,0 +1,9 @@
+# core (installed by install.sh)
+faster-whisper>=1.0
+
+# optional extras (conda env 'dfnet' created by ./install.sh --extras)
+# deepfilternet
+# onnxruntime
+
+# optional extras (conda env 'facefusion' — see https://github.com/facefusion/facefusion)
+# facefusion
