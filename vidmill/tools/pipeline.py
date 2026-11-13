@@ -1,8 +1,8 @@
 """Tool: pipeline — run a chain of tools over one job (resumable).
 
 Example:
-    vf pipeline clip.mp4 --job myedit --steps probe,transcribe,plan,cut,clean,export
-    vf pipeline clip.mp4 --job myedit --opt transcribe:model=small --opt plan:cut=12.5:14.2
+    vmill pipeline clip.mp4 --job myedit --steps probe,transcribe,plan,cut,clean,export
+    vmill pipeline clip.mp4 --job myedit --opt transcribe:model=small --opt plan:cut=12.5:14.2
 
 Each step is skipped when its artifact already exists in the job, so an
 interrupted run (or an AI agent inspecting between steps) can continue.
@@ -82,12 +82,12 @@ def run(args: argparse.Namespace) -> None:
         ns = step_args(step, argv)
         ns = apply_opts(ns, step, opts.get(step, []))
         _registry()[step].run(ns)
-    print("pipeline done — see `vf status --job " + str(j.path) + "`")
+    print("pipeline done — see `vmill status --job " + str(j.path) + "`")
 
 
 def step_args(step: str, argv: list[str]) -> argparse.Namespace:
     """Build a tool's namespace through its own add_args (single source of truth)."""
-    p = argparse.ArgumentParser(prog=f"vf {step}")
+    p = argparse.ArgumentParser(prog=f"vmill {step}")
     _registry()[step].add_args(p)
     return p.parse_args([str(a) for a in argv if a is not None])
 
@@ -96,7 +96,7 @@ def apply_opts(ns: argparse.Namespace, step: str, extra: list[str]) -> argparse.
     """Apply --opt STEP:KEY=VALUE extras to an already-built namespace."""
     if not extra:
         return ns
-    p = argparse.ArgumentParser(prog=f"vf {step}")
+    p = argparse.ArgumentParser(prog=f"vmill {step}")
     _registry()[step].add_args(p)
     argv: list = []
     if step == "probe":

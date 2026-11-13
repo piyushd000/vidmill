@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# videoforge installer — core + optional AI engines
+# vidmill installer — core + optional AI engines
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -12,7 +12,7 @@ python3 - <<'EOF' || { echo "python >= 3.10 is required"; exit 1; }
 import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)
 EOF
 
-say "installing core (faster-whisper + vf CLI)"
+say "installing core (faster-whisper + vmill CLI)"
 python3 -m pip install -q faster-whisper
 python3 -m pip install -q -e .
 
@@ -39,6 +39,6 @@ if [[ "${1:-}" == "--extras" ]]; then
   fi
 fi
 
-say "verifying with vf doctor"
-vf doctor
-say "done — try:  vf pipeline myvideo.mp4 --job myedit"
+say "verifying with vmill doctor"
+vmill doctor
+say "done — try:  vmill pipeline myvideo.mp4 --job myedit"

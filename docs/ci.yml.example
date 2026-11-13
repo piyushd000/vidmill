@@ -11,13 +11,13 @@ jobs:
           python-version: "3.11"
       - name: install ffmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
-      - name: install videoforge
+      - name: install vidmill
         run: |
           pip install faster-whisper
           pip install -e .
       - name: syntax check
-        run: python -m compileall videoforge
+        run: python -m compileall vidmill
       - name: doctor
-        run: vf doctor
+        run: vmill doctor
       - name: tool manifest is valid json
-        run: vf tools --json | python -m json.tool > /dev/null
+        run: vmill tools --json | python -m json.tool > /dev/null

@@ -16,12 +16,12 @@ PRESETS = {
     "hevc": ("smaller files (x265)", ["-c:v", "libx265", "-crf", "24", "-preset", "medium",
                                       "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k",
                                       "-tag:v", "hvc1", "-movflags", "+faststart"]),
-    "shorts": ("1080x1920 vertical", ["-vf", "scale=1080:1920:force_original_aspect_ratio=decrease,"
+    "shorts": ("1080x1920 vertical", ["-vmill", "scale=1080:1920:force_original_aspect_ratio=decrease,"
                                      "pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1",
                                       "-c:v", "libx264", "-crf", "20", "-preset", "medium",
                                       "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",
                                       "-movflags", "+faststart"]),
-    "yt": ("1920x1080 horizontal", ["-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,"
+    "yt": ("1920x1080 horizontal", ["-vmill", "scale=1920:1080:force_original_aspect_ratio=decrease,"
                                     "pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1",
                                     "-c:v", "libx264", "-crf", "20", "-preset", "medium",
                                     "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",

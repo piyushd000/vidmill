@@ -3,13 +3,13 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "videoforge"
+name = "vidmill"
 version = "0.1.0"
 description = "Open-source AI video editing toolkit: FFmpeg, Faster-Whisper, FaceFusion and DeepFilterNet as connected CLI tools any human or AI agent can orchestrate."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
-authors = [{ name = "videoforge contributors" }]
+authors = [{ name = "vidmill contributors" }]
 keywords = ["video", "editing", "ai", "ffmpeg", "whisper", "transcription", "face-swap", "cli", "agent-tools"]
 classifiers = [
   "Development Status :: 4 - Beta",
@@ -21,7 +21,7 @@ classifiers = [
 ]
 
 [project.scripts]
-vf = "videoforge.cli:main"
+vmill = "vidmill.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["videoforge*"]
+include = ["vidmill*"]

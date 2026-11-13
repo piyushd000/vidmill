@@ -1,4 +1,4 @@
-"""vf — command line interface for videoforge."""
+"""vmill — command line interface for vidmill."""
 
 from __future__ import annotations
 
@@ -16,12 +16,12 @@ from .tools import REGISTRY
 
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(
-        prog="vf",
-        description=("videoforge — open-source AI video editing toolkit. "
+        prog="vmill",
+        description=("vidmill — open-source AI video editing toolkit. "
                      "FFmpeg, Faster-Whisper, FaceFusion and DeepFilterNet exposed "
                      "as connected tools driven from one job directory."),
     )
-    ap.add_argument("--version", action="version", version=f"vf {__version__}")
+    ap.add_argument("--version", action="version", version=f"vmill {__version__}")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     for name, mod in REGISTRY.items():

@@ -68,7 +68,7 @@ class Job:
         job_dir = Path(job_dir).expanduser().resolve()
         f = job_dir / JOB_FILE
         if not f.exists():
-            raise ToolError(f"no job at {job_dir} — run `vf new <video> --job {job_dir}` first")
+            raise ToolError(f"no job at {job_dir} — run `vmill new <video> --job {job_dir}` first")
         return cls(job_dir, util.read_json(f))
 
     def save(self) -> None:
@@ -88,7 +88,7 @@ class Job:
         if missing:
             raise ToolError(
                 f"job is missing artifacts: {', '.join(missing)}. "
-                f"Run the tool that creates them (see `vf tools`)."
+                f"Run the tool that creates them (see `vmill tools`)."
             )
 
     def latest(self, name: str) -> dict:

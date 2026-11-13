@@ -25,7 +25,7 @@ def run(args: argparse.Namespace) -> None:
 
     plan_path = j.apath("cut_plan.json") if not args.plan_file else args.plan_file
     if not plan_path.exists():
-        raise util.ToolError("no cut_plan.json — run `vf plan` first (or pass --plan-file)")
+        raise util.ToolError("no cut_plan.json — run `vmill plan` first (or pass --plan-file)")
     plan = util.read_json(plan_path)
     keeps = plan.get("keep_seconds") or []
     if not keeps:

@@ -1,7 +1,7 @@
 """Tool: face — wrap FaceFusion's headless CLI -> swapped.mp4.
 
 The FaceFusion GUI is fully scriptable with `headless-run`; this tool
-connects it to the videoforge chain so the rest of the pipeline feeds it.
+connects it to the vidmill chain so the rest of the pipeline feeds it.
 
 Needs: conda env `facefusion` and the repo checkout. Override the repo
 location with AVF_FACEFUSION_DIR (default: ~/facefusion).
@@ -36,11 +36,11 @@ def run(args: argparse.Namespace) -> None:
     if not (py and os.path.isdir(repo)):
         raise util.ToolError(
             f"FaceFusion not ready (env '{ENV}' or repo {repo} missing). "
-            f"Install it or set AVF_FACEFUSION_DIR. `vf doctor` shows details.")
+            f"Install it or set AVF_FACEFUSION_DIR. `vmill doctor` shows details.")
 
     j = jobmod.Job.load(args.job)
     if not args.image:
-        raise util.ToolError("face needs a reference image: vf face --job <dir> --image face.jpg")
+        raise util.ToolError("face needs a reference image: vmill face --job <dir> --image face.jpg")
     src = j.apath(args.in_artifact) if args.in_artifact else j.current_video()
     image = os.path.expanduser(args.image)
     if not os.path.exists(image):
