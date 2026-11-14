@@ -2,11 +2,10 @@
 
 # vidmill
 
-**The all-in-one AI video editor for the terminal.**
+**Automatic video editing for the terminal — entirely on your machine.**
 
-Turn raw footage into a finished, published video in one sitting —
-cuts, captions, clean audio, face swap, delivery presets — entirely on
-your own machine.
+From raw footage to a finished, publish-ready video in one command.
+No cloud uploads, no subscriptions, and no AI API bill by default.
 
 ![CI](https://github.com/piyushd000/vidmill/actions/workflows/ci.yml/badge.svg)
 ![License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)
@@ -16,184 +15,155 @@ your own machine.
 
 ---
 
-## What is vidmill?
+## What it does
 
-vidmill is a complete video editing product built around a simple idea:
-**your editor should understand your video, not just play it.**
+vidmill understands the speech in your footage, so it can edit the way
+an editor would: remove pauses and still frames, cut dead air and
+retakes, caption every word in sync, clean the audio, add music and
+B-roll, and export for YouTube, Shorts/Reels or archival delivery.
 
-Give vidmill any footage — a talking-head recording, a vlog, a
-presentation — and it will:
-
-1. **Understand** — produce a word-level transcript, find the pauses,
-   the frozen still frames, and the retakes
-2. **Edit** — remove dead air and mistakes, keep every cut perfectly in
-   sync, denoise and normalize the audio, burn word-synced captions,
-   add no-copyright music, even swap in a face from a single photo
-3. **Deliver** — export finished files for YouTube, Shorts/Reels, or
-   your storage format of choice
-
-One command does all of it automatically (`vmill auto`). You can also
-drive each step yourself from the terminal, or let an AI agent direct
-the edit while you stay the editor-in-chief.
-
-**No cloud. No uploads. No subscriptions.** Your footage never leaves
-your computer, and vidmill is free software that will stay free.
-
-## Why vidmill?
+It works on talking-head recordings, vlogs, presentations and
+interviews — locally, with no account and no upload.
 
 | | vidmill | Traditional editors |
 |---|---|---|
 | Editing decisions | **Understands speech and timing** | You scrub timelines by hand |
 | Workflow | **One resumable chain, one command** | Dozens of menus and plugins |
-| Your footage | **Never uploaded anywhere** | Cloud editors require uploads |
-| Automation | **AI-agent ready via a tool manifest** | Closed, non-scriptable |
-| Price & freedom | **Free, open source (AGPL)** | Subscriptions and lock-in |
+| Your footage | **Never leaves your machine** | Cloud editors require uploads |
+| Automation | **Agent-ready via CLI manifest + MCP** | Closed, non-scriptable |
 
 ## Features
 
-- **One-command editing** — `vmill auto` takes a raw video from upload
-  to publish-ready with no manual work and no AI API bill
-- **Browser UI** — `vmill serve` gives the same job model a drag-and-drop
-  page with a live log and an in-browser player, with zero extra
-  dependencies
-- **Speech understanding** — word-level transcripts in 90+ languages,
-  with exact timing for every word
-- **Smart cutting** — automatic pause removal, still-frame ("no
-  movement") removal, false-start detection, and precise
-  manual/agent-authored cuts; audio and video always stay in sync
-- **Studio audio** — deep neural noise removal plus broadcast-standard
-  loudness normalization in one pass
-- **Word-synced captions** — burned into the video with correct
-  styling, automatically re-timed after cuts
-- **Neural face swap** — replace or restyle the face in your footage
-  from a single reference image
-- **B-roll & overlays** — logos, watermarks and picture-in-picture or
-  full-frame B-roll, positioned and timed from the command line
-- **No-copyright music & SFX** — a built-in, verified, commercial-safe
-  catalog: list, download, and mix without leaving the terminal
-- **Delivery presets** — YouTube-safe H.264, compact HEVC, 1080×1920
-  Shorts/Reels vertical, 1920×1080 landscape — GPU-accelerated when
-  your machine has a working hardware encoder, CPU otherwise
-- **Resumable by design** — every edit is a plain job folder; interrupt
-  anything and continue later, inspect or archive every step
-- **Agent-ready** — a machine-readable manifest (`vmill tools --json`)
-  and a built-in MCP server (`vmill mcp`) let any LLM agent discover
-  and drive every tool
+- **One-command editing** — `vmill auto` goes from raw file to `final.mp4` with zero manual work
+- **Zero AI bill by default** — the full edit runs locally; an optional single AI checkpoint costs a few cents at most
+- **Speech-aware cuts** — pauses, still frames and false starts; video and audio always stay in sync
+- **Word-synced captions** — burned in, automatically re-timed after every cut
+- **Studio audio** — neural noise removal plus broadcast-standard loudness
+- **No-copyright music & SFX** — verified commercial-safe catalog; list, download, mix
+- **B-roll & overlays** — logos, watermarks, picture-in-picture and full-frame cutaways
+- **Face swap** — optional module driven by a single reference photo
+- **Delivery presets** — YouTube H.264, compact HEVC, Shorts 1080×1920, landscape 1920×1080
+- **GPU acceleration** — used automatically when the hardware encoder is genuinely available
+- **Resumable job model** — every edit is a plain folder; inspect, archive or continue later
+- **Agent-ready** — JSON tool manifest and a built-in MCP server
+- **Local web UI** — drag, drop, watch the log, download the result
 
 ## Install
 
-**Linux / macOS.** Python 3.10+ required; everything else is handled
-by the installer.
+Linux or macOS, Python 3.10+:
 
 ```bash
 git clone https://github.com/piyushd000/vidmill.git
 cd vidmill
-./install.sh            # core: transcription + editing + export
-./install.sh --extras   # optional: neural face-swap module (needs conda)
+./install.sh            # core: transcription, editing, export
+./install.sh --extras   # optional: face swap (requires conda)
+
+vmill doctor            # verify the installation
 ```
 
-Then confirm your machine is ready:
+The installer provisions the required engines; `vmill doctor` reports
+exactly what is ready and what is optional.
 
-```bash
-vmill doctor
-```
+## Usage
 
-## Quickstart — one command
+### Automatic — upload and walk away
 
 ```bash
 vmill auto myvideo.mp4 --job myedit
 ```
 
-That's the whole workflow: upload (or point at) a video, walk away, and
-come back to a finished edit — pauses and still frames removed,
-subtitles generated and burned in, audio cleaned, and a publish-ready
-`final.mp4` exported. No manual work, no AI API bill.
-
-Prefer to stay in control? Run the chain yourself:
+The free local pass probes the video, transcribes every word, removes
+pauses and still frames, optionally drops likely retakes, cleans the
+audio, burns word-synced captions, and exports `myedit/final.mp4`.
+No API key is involved.
 
 ```bash
-vmill pipeline myvideo.mp4 --job myedit
+vmill auto myvideo.mp4 --job myedit --mistakes   # also drop likely retakes
+vmill auto --job myedit --ai                     # opt into one AI review
 ```
 
-Every step is skipped if its result already exists, so the chain is
-resumable.
-
-## Fully automatic — upload and walk away
-
-`vmill auto` runs the entire edit with zero manual work:
+With `--ai` and an OpenAI-compatible key, vidmill sends **one compact
+text digest** — never the video — asking what else should be cut. If no
+key is set or the call fails, the free edit is delivered unchanged.
 
 ```bash
-vmill auto myvideo.mp4 --job myedit            # fully free, no AI call
-vmill auto myvideo.mp4 --job myedit --mistakes # also drop likely retakes
-vmill auto --job myedit --ai                   # opt into ONE AI review
-```
-
-What happens on the free pass:
-
-1. **Understand** the video (probe) and transcribe every word locally
-2. **Plan** the cuts: long pauses, frozen "no movement" segments
-   (still frames while nobody talks), and optionally likely retakes
-3. **Cut**, **clean** the audio, **caption** word-synced, **export**
-
-Then the optional AI checkpoint. By default this costs nothing — if no
-API key is set, the free edit is simply delivered. With
-`--ai` and an OpenAI-compatible key, vidmill makes **one compact text
-call** (a transcript digest of a few thousand characters — the video
-itself is never uploaded) asking: *what else should be cut?* Suggested
-cuts are applied automatically and the video is re-exported.
-
-```bash
-export VIDMILL_AI_KEY=sk-...                        # or OPENAI_API_KEY
-export VIDMILL_AI_BASE=https://api.openai.com/v1    # any compatible API
+export VIDMILL_AI_KEY=sk-...                     # or OPENAI_API_KEY
+export VIDMILL_AI_BASE=https://api.openai.com/v1 # any compatible API
 export VIDMILL_AI_MODEL=gpt-4o-mini
-vmill auto myvideo.mp4 --job myedit --ai
 ```
 
-If the call fails or returns nonsense, the free local edit is kept and
-delivered — the checkpoint can only improve the video, never break it.
-
-## Quickstart — step by step
+### Step by step
 
 ```bash
 vmill probe myvideo.mp4 --job myedit      # open the video
 vmill transcribe --job myedit             # word-level transcript
-vmill plan --job myedit --mistakes        # cut plan: pauses + retakes
+vmill plan --job myedit --mistakes        # cut plan
 vmill cut --job myedit                    # apply it -> cut.mp4
-vmill clean --job myedit                  # denoise + loudness -> cleaned.mp4
-vmill captions --job myedit               # word-synced captions
-vmill export --job myedit --preset shorts # 1080x1920 -> final.mp4
-vmill status --job myedit                 # inspect every step
+vmill clean --job myedit                  # denoise + normalize
+vmill captions --job myedit               # burned-in captions
+vmill export --job myedit --preset shorts # delivery file
+vmill status --job myedit                 # inspect artifacts
 ```
 
-## Let an AI direct the edit
+Every step skips work that already exists, so the chain is resumable.
+`vmill pipeline myvideo.mp4 --job myedit` runs the whole chain at once.
 
-The judgment calls — which take is wrong, which story to trim — are
-what AI is good at. vidmill exposes them cleanly:
+### Web UI
 
 ```bash
-vmill transcribe --job myedit          # agent reads myedit/transcript.json
-# agent writes myedit/agent_plan.json:
-#   { "cuts": [ { "from_s": 60.98, "to_s": 63.30,
-#                 "why": "false start, corrected on the next line" } ] }
-vmill plan --job myedit --plan-file myedit/agent_plan.json
-vmill cut   --job myedit
+vmill serve --open        # http://127.0.0.1:8765
 ```
 
-Any agent (LLM coding assistant, script, automation) can discover the
-full toolset with `vmill tools --json` and drive the product end to end.
-See [`examples/agent_plan.json`](examples/agent_plan.json).
+Drag a video onto the page and press **Start edit**; the log streams
+live and the result plays in the browser when it is ready. Jobs live in
+`~/vmill-jobs` (`--dir` to change). The server is standard-library only
+and binds loopback by default.
 
-## Agent-native: built-in MCP server
-
-vidmill speaks the Model Context Protocol out of the box — no plugins,
-no wrapper scripts:
+### Music & sound effects
 
 ```bash
-vmill mcp          # JSON-RPC on stdio, pure protocol
-vmill mcp --check  # self-test: initialize + list all tools
+vmill music list --mood happy --json    # browse the verified catalog
+vmill music get carefree --job myedit   # download into the job
+vmill music mix carefree --job myedit   # mix under the voice
 ```
 
-Point any MCP client at it, e.g. Claude Desktop:
+Every track is commercial-safe (CC0, public domain or CC BY). `mix`
+loops, ducks and fades the music and prints the attribution line your
+video description needs.
+
+### B-roll, logos & watermarks
+
+```bash
+vmill overlay --job myedit --image logo.png --position top-right \
+              --scale 0.15 --at 0 --to 10 --fade 0.4
+vmill overlay --job myedit --video broll.mp4 --mode pip --at 5 --to 11
+vmill overlay --job myedit --video broll.mp4 --mode cutaway --at 5 --to 11
+```
+
+Overlays stack as `overlay_1.mp4`, `overlay_2.mp4`, … and become the
+current video, so captions and export chain on top. `--spec
+overlays.json` applies a list in one run.
+
+### Face swap
+
+```bash
+vmill face --job myedit --image face.jpg
+vmill export --job myedit
+```
+
+Requires the optional module from `./install.sh --extras`; see
+`vmill face --help` for model and enhancement options.
+
+### Agents
+
+Every capability is a stable CLI tool with declared inputs and outputs:
+
+```bash
+vmill tools --json     # machine-readable manifest
+vmill mcp              # MCP server over stdio (Claude Desktop, etc.)
+```
+
+MCP client configuration:
 
 ```json
 {
@@ -203,81 +173,8 @@ Point any MCP client at it, e.g. Claude Desktop:
 }
 ```
 
-The agent then sees every tool — `auto`, `transcribe`, `plan`, `overlay`,
-`music`, `export`, … — with schemas generated from the real CLI, so they
-can never drift. Tool output is returned as text; failures come back as
-errors without killing the server.
-
-## Face swap
-
-```bash
-vmill face --job myedit --image face.jpg
-vmill export --job myedit
-```
-
-One reference photo is enough. The module installs with
-`./install.sh --extras` (requires conda) and supports face-swap model
-and enhancement options via `--extra` — see `vmill face --help`.
-
-## Music & sounds
-
-A curated catalog of no-copyright music and sound effects ships with
-vidmill — every track is commercial-safe (CC0, public domain, or CC BY)
-and every download link is verified:
-
-```bash
-vmill music list --mood happy --json    # browse the catalog
-vmill music get carefree --job myedit   # download into the job
-vmill music mix carefree --job myedit   # mix it under the voice
-```
-
-`mix` loops the track to cover the video, lowers it under speech,
-fades it out at the end, and prints the attribution line (CC BY tracks
-need a credit in your video description; CC0 and public-domain tracks
-need nothing). An agent can list the catalog, pick a mood, download and
-mix — three commands, no third-party service.
-
-## B-roll, logos & watermarks
-
-```bash
-# logo / watermark: top-right, 15% width, fade in and out
-vmill overlay --job myedit --image logo.png --position top-right \
-              --scale 0.15 --at 0 --to 10 --fade 0.4
-
-# B-roll as picture-in-picture in a time window
-vmill overlay --job myedit --video broll.mp4 --mode pip --at 5 --to 11
-
-# B-roll replaces the full frame (main audio stays underneath)
-vmill overlay --job myedit --video broll.mp4 --mode cutaway --at 5 --to 11
-```
-
-Positions are `top-left`, `top-right`, `bottom-left`, `bottom-right`,
-`center`, or a raw `X:Y` expression. Every pass writes `overlay_1.mp4`,
-`overlay_2.mp4`, … and becomes the current video, so overlays stack and
-captions/export chain on top. `--spec overlays.json` applies a whole
-list in one run:
-
-```json
-{"overlays": [
-  {"image": "logo.png", "position": "top-right", "scale": 0.15, "at": 0},
-  {"video": "broll.mp4", "mode": "cutaway", "at": 5, "to": 9}
-]}
-```
-
-## Browser UI
-
-Prefer buttons to flags? Run the local web app:
-
-```bash
-vmill serve --open        # http://127.0.0.1:8765
-```
-
-Drag a video onto the page (or paste a path already on the machine),
-press **Start edit**, and watch the log. When it finishes, the result
-plays right in the page and is one click from download. Jobs live in
-`~/vmill-jobs` (change with `--dir`). The server uses only the Python
-standard library, binds loopback by default, and shells out to the very
-same CLI tools — the UI is a window onto the job model, not a second app.
+Schemas are generated from the real CLI, so the agent surface cannot
+drift from the product.
 
 ## The tools
 
@@ -291,7 +188,7 @@ same CLI tools — the UI is a window onto the job model, not a second app.
 | `vmill clean` | Denoise and normalize the audio |
 | `vmill captions` | Burn word-synced captions |
 | `vmill face` | Neural face swap from a reference photo |
-| `vmill music` | Curated no-copyright music & SFX: list, download, mix |
+| `vmill music` | No-copyright music & SFX: list, download, mix |
 | `vmill overlay` | Logos, watermarks and B-roll (pip or full-frame cutaway) |
 | `vmill export` | Delivery presets: `final`, `hevc`, `shorts`, `yt` |
 | `vmill pipeline` | Run the whole chain, resumable |
@@ -300,11 +197,11 @@ same CLI tools — the UI is a window onto the job model, not a second app.
 | `vmill status` | Inspect a job's artifacts and history |
 | `vmill doctor` | Verify your installation |
 
-## How it fits together
+## How it works
 
-Every edit is a **job folder**. Tools read the current result, produce
-the next one, and record what they did — so the chain is resumable,
-inspectable, and scriptable by anyone (human or AI):
+Every edit is a **job folder**. Each tool reads the current result,
+produces the next artifact, and records what it did — which makes the
+chain resumable, inspectable and scriptable by humans and agents alike:
 
 ```
 probe ──► transcript ──► cut plan ──► cut ──► clean ──► captions ──► export
@@ -312,48 +209,96 @@ probe ──► transcript ──► cut plan ──► cut ──► clean ─�
                           drop)        edit)   audio)    sync)        file)
 ```
 
-Job folders are plain files — copy them, diff their `job.json`, archive
-them, or hand them to an agent.
+Job folders are plain files: copy them, diff `job.json`, archive them,
+or hand them to an agent.
 
 ## Requirements
 
 - Linux or macOS
 - Python 3.10+
-- ~5 GB free disk for optional AI models (downloaded on first use)
-- A CPU is enough; a GPU accelerates transcription and, when its
-  encoder actually works, delivery exports — both are detected and
-  used automatically, with a CPU fallback
+- ~5 GB free disk for optional model downloads (first use only)
+- A CPU is enough. A GPU accelerates transcription and delivery
+  exports when a working hardware encoder is present — both are
+  detected automatically, with a CPU fallback.
 
-## Roadmap
+## Contributing
 
-- [x] Fully automatic edit mode (`vmill auto`) with an optional single AI checkpoint
-- [x] Built-in no-copyright music & sound effects catalog (`vmill music`)
-- [x] B-roll and image overlay tools (`vmill overlay`)
-- [x] Agent-native interface (MCP server over the same tools)
-- [x] Automatic GPU detection and acceleration profiles
-- [x] Web UI on top of the job model
+Contributions are welcome: bug fixes, new tools, documentation and
+engine improvements. The full guide lives in
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
+### Report a bug
+
+Open an [issue](https://github.com/piyushd000/vidmill/issues/new?template=bug_report.md)
+with:
+
+- the command you ran and what happened
+- `vmill --version`, your OS, and the output of `vmill doctor`
+- the relevant part of the job log or traceback
+
+### Fix a bug and send a commit
+
+```bash
+# 1. fork the repository on GitHub, then:
+git clone https://github.com/<your-user>/vidmill.git
+cd vidmill
+git remote add upstream https://github.com/piyushd000/vidmill.git
+
+# 2. work on a branch, never on main
+git checkout -b fix/short-description
+
+# 3. make the change, then run the same checks as CI
+python -m compileall vidmill
+vmill doctor
+vmill tools --json | python -m json.tool > /dev/null
+vmill mcp --check
+vmill serve --check
+
+# 4. commit and push
+git add -A
+git commit -m "fix: one-line summary of the change"
+git push origin fix/short-description
+```
+
+Then open a pull request against `main`. Keep one logical change per
+pull request, describe the problem, the fix and how you verified it,
+and make sure CI is green. Write clear commit messages in the
+`fix:`, `feat:` or `docs:` style.
+
+### Add a tool
+
+1. Create `vidmill/tools/<name>.py` with `PURPOSE`, `add_args()` and
+   `run()` — follow the existing modules.
+2. Register it in `vidmill/tools/__init__.py` and describe it in
+   `vidmill/registry.py`.
+3. Regenerate the agent manifest: `vmill tools --json > tools.json`.
+4. Add a row to the tools table above and a short usage section.
+5. Verify: `python -m compileall vidmill && vmill mcp --check`.
+
+By contributing you agree that your changes are released under the
+project license, AGPL-3.0-or-later.
 
 ## FAQ
 
 **Is my footage uploaded anywhere?**
 No. vidmill runs entirely on your machine. Nothing is sent to any
-service, ever.
+service unless you explicitly opt into the AI checkpoint, and even then
+only a compact text digest is sent — never the video.
 
-**How good are the automatic cuts?**
-They are conservative by default: obvious pauses are removed, still
-"no movement" segments are dropped only where nobody is speaking,
-likely retakes are suggested (shown with reasons, applied only when you
-ask). The AI checkpoint (if you opt in) suggests at most a few more
-cuts, with reasons, and can never remove meaningful content. You always
-have the final say.
+**How aggressive are the automatic cuts?**
+Conservative by default: obvious pauses are removed, still segments
+are dropped only where nobody is speaking, and likely retakes are
+applied only when asked. The optional AI review can only add a few
+reasoned cuts; you always have the final say.
 
-**Can I use it in my workflow/scripts?**
-That's the point. Every tool is a stable CLI with JSON output
-(`vmill tools --json`), designed to be driven by scripts and AI agents.
+**Can I drive it from scripts or an AI agent?**
+Yes — that is the design. Every tool is a stable CLI with declared
+inputs and outputs, discoverable via `vmill tools --json`, plus an
+MCP server for agent frameworks.
 
 ## License
 
-vidmill — the all-in-one AI video editor for the terminal.
+vidmill — automatic video editing for the terminal.
 Copyright (C) 2026 vidmill contributors.
 
 This is free software: you can redistribute it and/or modify it under
