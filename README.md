@@ -69,7 +69,8 @@ your computer, and vidmill is free software that will stay free.
 - **No-copyright music & SFX** — a built-in, verified, commercial-safe
   catalog: list, download, and mix without leaving the terminal
 - **Delivery presets** — YouTube-safe H.264, compact HEVC, 1080×1920
-  Shorts/Reels vertical, 1920×1080 landscape
+  Shorts/Reels vertical, 1920×1080 landscape — GPU-accelerated when
+  your machine has a working hardware encoder, CPU otherwise
 - **Resumable by design** — every edit is a plain job folder; interrupt
   anything and continue later, inspect or archive every step
 - **Agent-ready** — a machine-readable manifest (`vmill tools --json`)
@@ -300,7 +301,9 @@ them, or hand them to an agent.
 - Linux or macOS
 - Python 3.10+
 - ~5 GB free disk for optional AI models (downloaded on first use)
-- A CPU is enough; any GPU accelerates transcription and face swap
+- A CPU is enough; a GPU accelerates transcription and, when its
+  encoder actually works, delivery exports — both are detected and
+  used automatically, with a CPU fallback
 
 ## Roadmap
 
@@ -308,8 +311,8 @@ them, or hand them to an agent.
 - [x] Built-in no-copyright music & sound effects catalog (`vmill music`)
 - [x] B-roll and image overlay tools (`vmill overlay`)
 - [x] Agent-native interface (MCP server over the same tools)
+- [x] Automatic GPU detection and acceleration profiles
 - [ ] Web UI on top of the job model
-- [ ] Automatic GPU detection and acceleration profiles
 
 ## FAQ
 

@@ -103,6 +103,10 @@ def doctor_cmd(a) -> None:
 
     check("gh CLI", bool(shutil.which("gh")), "for publishing to GitHub (optional)")
 
+    gpu = util.gpu_backend()
+    check("GPU acceleration", bool(gpu),
+          f"{gpu[0]} — {gpu[1]}" if gpu else "none detected — CPU encode (fine; GPU is optional)")
+
     width = max(len(r[0]) for r in rows)
     all_core = True
     for label, ok_, note in rows:

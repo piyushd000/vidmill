@@ -112,9 +112,11 @@ TOOLS = [
     },
     {
         "name": "export",
-        "cmd": "vmill export --job <dir> [--preset final|hevc|shorts|yt] [--in <artifact>]",
-        "purpose": "Export the current video with a delivery preset -> final.mp4.",
-        "inputs": {"--preset": "final (h264/youtube)|hevc|shorts (1080x1920)|yt (1920x1080)"},
+        "cmd": "vmill export --job <dir> [--preset final|hevc|shorts|yt] [--hwaccel auto|off|nvenc|qsv|vaapi|videotoolbox]",
+        "purpose": ("Export the current video with a delivery preset -> final.mp4. "
+                    "GPU encode is auto-detected and verified; CPU fallback is automatic."),
+        "inputs": {"--preset": "final (h264/youtube)|hevc|shorts (1080x1920)|yt (1920x1080)",
+                   "--hwaccel": "auto (default) | off | force a backend"},
         "outputs": ["final.mp4"],
         "engine": "ffmpeg",
     },

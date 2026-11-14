@@ -55,6 +55,52 @@ def ffprobe(path: Path) -> dict:
     return json.loads(p.stdout or "{}")
 
 
+# ------------------------------------------------------------------- gpu
+
+def _can_encode(backend: str) -> bool:
+    """True only if a tiny real encode succeeds on this backend."""
+    enc = {"nvenc": "h264_nvenc", "qsv": "h264_qsv",
+           "videotoolbox": "h264_videotoolbox"}[backend]
+    pix = "nv12" if backend == "qsv" else "yuv420p"
+    p = run([FFMPEG, "-hide_banner", "-loglevel", "error", "-y",
+             "-f", "lavfi", "-i", "color=c=black:s=64x64:d=0.2",
+             "-frames:v", "2", "-c:v", enc, "-pix_fmt", pix, "-f", "null", "-"],
+            check=False, quiet=True)
+    return p.returncode == 0
+
+
+def gpu_backend() -> tuple[str, str] | None:
+    """Detect a *usable* hardware encoder backend: (backend, gpu name) or None.
+
+    Candidates must pass a real one-frame encode: a device node or an
+    encoder listing alone proves nothing (VMs expose /dev/dri without a
+    working driver, containers ship NVENC without a GPU).
+    """
+    import os
+    import platform
+    import shutil
+
+    p = run([FFMPEG, "-hide_banner", "-encoders"], check=False, quiet=True)
+    encoders = (p.stdout or "") + (p.stderr or "")
+
+    if shutil.which("nvidia-smi") and "h264_nvenc" in encoders:
+        q = run(["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+                check=False, quiet=True)
+        name = (q.stdout or "").strip().splitlines()
+        if q.returncode == 0 and name and _can_encode("nvenc"):
+            return "nvenc", name[0].strip()
+
+    if platform.system() == "Darwin" and "h264_videotoolbox" in encoders:
+        if _can_encode("videotoolbox"):
+            return "videotoolbox", "Apple GPU (VideoToolbox)"
+
+    if os.path.exists("/dev/dri/renderD128") and "h264_qsv" in encoders:
+        if _can_encode("qsv"):
+            return "qsv", "Intel GPU (Quick Sync)"
+
+    return None
+
+
 def probe_info(path: Path) -> dict:
     """Compact, tool-friendly media summary."""
     data = ffprobe(path)
