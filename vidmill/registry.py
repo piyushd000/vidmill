@@ -102,6 +102,15 @@ TOOLS = [
         "engine": "vidmill local engines (overlay compositing)",
     },
     {
+        "name": "mcp",
+        "cmd": "vmill mcp [--check]",
+        "purpose": ("MCP server on stdio: every vidmill tool exposed to AI agents "
+                    "(Claude Desktop, agent frameworks) with auto-derived schemas."),
+        "inputs": {"--check": "self-test initialize + tools/list"},
+        "outputs": ["JSON-RPC 2.0 on stdio"],
+        "engine": "MCP (Model Context Protocol)",
+    },
+    {
         "name": "export",
         "cmd": "vmill export --job <dir> [--preset final|hevc|shorts|yt] [--in <artifact>]",
         "purpose": "Export the current video with a delivery preset -> final.mp4.",

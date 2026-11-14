@@ -73,7 +73,8 @@ your computer, and vidmill is free software that will stay free.
 - **Resumable by design** — every edit is a plain job folder; interrupt
   anything and continue later, inspect or archive every step
 - **Agent-ready** — a machine-readable manifest (`vmill tools --json`)
-  lets any LLM agent discover and drive every tool
+  and a built-in MCP server (`vmill mcp`) let any LLM agent discover
+  and drive every tool
 
 ## Install
 
@@ -178,6 +179,31 @@ Any agent (LLM coding assistant, script, automation) can discover the
 full toolset with `vmill tools --json` and drive the product end to end.
 See [`examples/agent_plan.json`](examples/agent_plan.json).
 
+## Agent-native: built-in MCP server
+
+vidmill speaks the Model Context Protocol out of the box — no plugins,
+no wrapper scripts:
+
+```bash
+vmill mcp          # JSON-RPC on stdio, pure protocol
+vmill mcp --check  # self-test: initialize + list all tools
+```
+
+Point any MCP client at it, e.g. Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "vidmill": { "command": "vmill", "args": ["mcp"] }
+  }
+}
+```
+
+The agent then sees every tool — `auto`, `transcribe`, `plan`, `overlay`,
+`music`, `export`, … — with schemas generated from the real CLI, so they
+can never drift. Tool output is returned as text; failures come back as
+errors without killing the server.
+
 ## Face swap
 
 ```bash
@@ -250,6 +276,7 @@ list in one run:
 | `vmill overlay` | Logos, watermarks and B-roll (pip or full-frame cutaway) |
 | `vmill export` | Delivery presets: `final`, `hevc`, `shorts`, `yt` |
 | `vmill pipeline` | Run the whole chain, resumable |
+| `vmill mcp` | MCP server: every tool for AI agents over stdio |
 | `vmill status` | Inspect a job's artifacts and history |
 | `vmill doctor` | Verify your installation |
 
@@ -280,7 +307,7 @@ them, or hand them to an agent.
 - [x] Fully automatic edit mode (`vmill auto`) with an optional single AI checkpoint
 - [x] Built-in no-copyright music & sound effects catalog (`vmill music`)
 - [x] B-roll and image overlay tools (`vmill overlay`)
-- [ ] Agent-native interface (MCP server over the same tools)
+- [x] Agent-native interface (MCP server over the same tools)
 - [ ] Web UI on top of the job model
 - [ ] Automatic GPU detection and acceleration profiles
 

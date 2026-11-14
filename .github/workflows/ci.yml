@@ -21,3 +21,5 @@ jobs:
         run: vmill doctor
       - name: tool manifest is valid json
         run: vmill tools --json | python -m json.tool > /dev/null
+      - name: mcp server self-test
+        run: vmill mcp --check
