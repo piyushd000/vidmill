@@ -53,6 +53,9 @@ your computer, and vidmill is free software that will stay free.
 
 - **One-command editing** — `vmill auto` takes a raw video from upload
   to publish-ready with no manual work and no AI API bill
+- **Browser UI** — `vmill serve` gives the same job model a drag-and-drop
+  page with a live log and an in-browser player, with zero extra
+  dependencies
 - **Speech understanding** — word-level transcripts in 90+ languages,
   with exact timing for every word
 - **Smart cutting** — automatic pause removal, still-frame ("no
@@ -261,6 +264,21 @@ list in one run:
 ]}
 ```
 
+## Browser UI
+
+Prefer buttons to flags? Run the local web app:
+
+```bash
+vmill serve --open        # http://127.0.0.1:8765
+```
+
+Drag a video onto the page (or paste a path already on the machine),
+press **Start edit**, and watch the log. When it finishes, the result
+plays right in the page and is one click from download. Jobs live in
+`~/vmill-jobs` (change with `--dir`). The server uses only the Python
+standard library, binds loopback by default, and shells out to the very
+same CLI tools — the UI is a window onto the job model, not a second app.
+
 ## The tools
 
 | Command | What it does |
@@ -278,6 +296,7 @@ list in one run:
 | `vmill export` | Delivery presets: `final`, `hevc`, `shorts`, `yt` |
 | `vmill pipeline` | Run the whole chain, resumable |
 | `vmill mcp` | MCP server: every tool for AI agents over stdio |
+| `vmill serve` | Local web UI: upload, edit, watch, download |
 | `vmill status` | Inspect a job's artifacts and history |
 | `vmill doctor` | Verify your installation |
 
@@ -312,7 +331,7 @@ them, or hand them to an agent.
 - [x] B-roll and image overlay tools (`vmill overlay`)
 - [x] Agent-native interface (MCP server over the same tools)
 - [x] Automatic GPU detection and acceleration profiles
-- [ ] Web UI on top of the job model
+- [x] Web UI on top of the job model
 
 ## FAQ
 

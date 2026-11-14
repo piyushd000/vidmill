@@ -9,7 +9,7 @@ import sys
 
 from . import APP_NAME, ToolError, __version__
 from . import job as jobmod
-from . import mcp_server, util
+from . import mcp_server, util, web
 from .registry import TOOLS, manifest
 from .tools import REGISTRY
 
@@ -36,6 +36,10 @@ def main(argv: list[str] | None = None) -> None:
     mp = sub.add_parser("mcp", help=mcp_server.PURPOSE)
     mcp_server.add_args(mp)
     mp.set_defaults(func=mcp_server.run)
+
+    wp = sub.add_parser("serve", help=web.PURPOSE)
+    web.add_args(wp)
+    wp.set_defaults(func=web.run)
 
     sp2 = sub.add_parser("status", help="show a job's artifacts and tool history")
     sp2.add_argument("--job", required=True)

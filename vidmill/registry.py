@@ -111,6 +111,15 @@ TOOLS = [
         "engine": "MCP (Model Context Protocol)",
     },
     {
+        "name": "serve",
+        "cmd": "vmill serve [--host 127.0.0.1] [--port 8765] [--dir ~/vmill-jobs] [--open]",
+        "purpose": ("Local web UI on the job model: drag-drop upload, run the automatic "
+                    "edit, live log, play/download the result. Stdlib only; loopback by default."),
+        "inputs": {"--port": "http port", "--dir": "jobs workspace", "--open": "open browser"},
+        "outputs": ["http://127.0.0.1:<port>/"],
+        "engine": "vidmill (embedded single-page UI + stdlib http server)",
+    },
+    {
         "name": "export",
         "cmd": "vmill export --job <dir> [--preset final|hevc|shorts|yt] [--hwaccel auto|off|nvenc|qsv|vaapi|videotoolbox]",
         "purpose": ("Export the current video with a delivery preset -> final.mp4. "
