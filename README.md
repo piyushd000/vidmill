@@ -170,6 +170,13 @@ source. The log streams live and the result plays in the browser when it
 is ready. The optional AI panel lets you ask for further changes in plain
 language; it greys out when no API key is configured.
 
+The editor is a three-pane studio: a media bin and project inspector on
+the left, the program monitor with a multi-track timeline in the centre,
+and the AI editor on the right. The bin shows every output plus its source,
+with thumbnails and waveforms generated locally; import extra video, audio
+or image assets straight into it. Projects opened by path keep the
+original file in place and show it in the bin without copying it.
+
 Jobs live in `~/vmill-jobs` (`--dir` to change). The server is
 standard-library only and binds loopback by default.
 

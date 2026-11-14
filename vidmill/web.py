@@ -34,11 +34,14 @@ from pathlib import Path
 
 from . import job as jobmod
 from . import util
+from .web_ui import HTML
 
 PURPOSE = "local web UI: upload, automatic edit, AI changes, watch, download"
 
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 VIDEO_EXT = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi"}
+IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
+AUDIO_EXT = {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac", ".opus"}
 REGION_RE = re.compile(r"^\d+:\d+:\d+:\d+$")
 DEFAULT_OPTS = {"silences": True, "still": True, "mistakes": True,
                 "captions": True, "clean": True, "watermark": "auto"}
@@ -171,9 +174,14 @@ def _status(name: str) -> dict:
         "created": j.data.get("created"),
         "width": info.get("width"), "height": info.get("height"),
         "duration": info.get("duration"), "size_bytes": info.get("size_bytes"),
+        "fps": info.get("fps"), "has_audio": info.get("has_audio"),
+        "job_dir": str(jdir),
+        "ai_model": os.environ.get("VIDMILL_AI_MODEL") or "openai-compatible",
         "artifacts": arts, "video": video, "running": running,
         "ai_running": ai_running, "ai_available": _has_key(),
         "opts": opts, "finished": bool(video) and not running and not ai_running,
+        "current": next((a for a in arts if a["name"] == video), None),
+        "asset_count": _asset_count(jdir, j),
     }
 
 
@@ -202,6 +210,437 @@ def _log_tail(name: str, filename: str = ".run.log", limit: int = 60000) -> str:
 
 def _ai_text(name: str) -> str:
     return _log_tail(name, ".ai.log")
+
+
+def _media_kind(filename: str) -> str | None:
+    suffix = Path(filename).suffix.lower()
+    if suffix in VIDEO_EXT:
+        return "video"
+    if suffix in IMAGE_EXT:
+        return "image"
+    if suffix in AUDIO_EXT:
+        return "audio"
+    return None
+
+
+PROBE_CACHE: dict[str, tuple[tuple[int, int], dict]] = {}
+PROBE_LOCK = threading.Lock()
+
+
+def _probe(path: Path) -> dict:
+    """Probe once per (size, mtime); media bins and timelines are polled."""
+    try:
+        st = path.stat()
+    except OSError:
+        return {}
+    key = str(path)
+    sig = (st.st_mtime_ns, st.st_size)
+    with PROBE_LOCK:
+        hit = PROBE_CACHE.get(key)
+    if hit and hit[0] == sig:
+        return hit[1]
+    try:
+        info = util.probe_info(path)
+    except Exception:
+        info = {}
+    with PROBE_LOCK:
+        PROBE_CACHE[key] = (sig, info)
+    return info
+
+
+def _job_file(jdir: Path, filename: str) -> Path:
+    fname = Path(filename).name
+    if not fname or fname.startswith(".") or _media_kind(fname) is None:
+        raise FileNotFoundError(filename)
+    path = (jdir / fname).resolve()
+    if path.parent != jdir or not path.exists():
+        raise FileNotFoundError(filename)
+    return path
+
+
+def _media_files(jdir: Path) -> list[Path]:
+    if not jdir.exists():
+        return []
+    return sorted((p for p in jdir.iterdir()
+                   if p.is_file() and not p.name.startswith(".") and _media_kind(p.name)),
+                  key=lambda p: p.name.lower())
+
+
+def _created_of(path: Path) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime(path.stat().st_mtime))
+
+
+def _source_path(j: jobmod.Job) -> Path | None:
+    """The project's original video, if it still exists on disk."""
+    src = Path(j.data.get("video", "")).expanduser()
+    try:
+        if src.is_file() and _media_kind(src.name):
+            return src.resolve()
+    except OSError:
+        pass
+    return None
+
+
+def _external_source(jdir: Path, j: jobmod.Job) -> Path | None:
+    """A source imported by path, left outside the job folder on purpose."""
+    src = _source_path(j)
+    if src is None:
+        return None
+    try:
+        if src.parent == jdir.resolve():
+            return None
+    except OSError:
+        return None
+    return src
+
+
+def _external_asset(name: str, jdir: Path, j: jobmod.Job, src: Path,
+                    info: dict) -> dict:
+    probed = _probe(src)
+    display = j.data.get("source_name") or src.name
+    if (jdir / display).exists():
+        stem, suffix = Path(display).stem, Path(display).suffix
+        display = f"{stem} (source){suffix}"
+    st = src.stat()
+    quote = urllib.parse.quote
+    return {
+        "name": display,
+        "kind": _media_kind(src.name) or "video",
+        "bytes": st.st_size,
+        "duration": round(float(probed.get("duration") or info.get("duration") or 0), 3) or None,
+        "width": probed.get("width") or info.get("width"),
+        "height": probed.get("height") or info.get("height"),
+        "fps": probed.get("fps") or info.get("fps"),
+        "has_audio": probed.get("has_audio", info.get("has_audio")),
+        "created": _created_of(src),
+        "source": True,
+        "external": True,
+        "artifact": False,
+        "current": False,
+        "thumb": f"/source_thumb/{quote(name, safe='')}?v={st.st_mtime_ns}",
+        "url": f"/source/{quote(name, safe='')}?v={st.st_mtime_ns}",
+    }
+
+
+def _asset_count(jdir: Path, j: jobmod.Job) -> int:
+    return len(_media_files(jdir)) + (1 if _external_source(jdir, j) else 0)
+
+
+def _assets(name: str) -> dict:
+    jdir = _job_dir(name)
+    if not (jdir / "job.json").exists():
+        raise FileNotFoundError(name)
+    j = jobmod.Job.load(jdir)
+    info = j.data.get("info", {})
+    arts = j.data.get("artifacts", {})
+    video = _current_video(j, _video_artifacts(j))
+    src = Path(j.data.get("video", "")).expanduser()
+    try:
+        src_resolved = src.resolve()
+    except OSError:
+        src_resolved = src
+    out = []
+    for path in _media_files(jdir):
+        kind = _media_kind(path.name) or "file"
+        meta = (arts.get(path.name) or {}).get("meta") or {}
+        probed = _probe(path) if kind in ("video", "audio") else {}
+        dur = meta.get("duration")
+        if dur is None:
+            dur = probed.get("duration")
+        if kind == "image":
+            dur = None
+        st = path.stat()
+        try:
+            is_source = path.resolve() == src_resolved
+        except OSError:
+            is_source = False
+        out.append({
+            "name": path.name,
+            "kind": kind,
+            "bytes": st.st_size,
+            "duration": round(float(dur), 3) if dur else None,
+            "width": meta.get("width") or probed.get("width") or info.get("width"),
+            "height": meta.get("height") or probed.get("height") or info.get("height"),
+            "fps": probed.get("fps") or info.get("fps"),
+            "has_audio": probed.get("has_audio", info.get("has_audio")),
+            "created": (arts.get(path.name) or {}).get("created") or _created_of(path),
+            "source": is_source,
+            "artifact": path.name in arts,
+            "current": path.name == video,
+            "thumb": f"/thumb/{urllib.parse.quote(name, safe='')}/"
+                     f"{urllib.parse.quote(path.name, safe='')}?v={st.st_mtime_ns}",
+            "url": f"/media/{urllib.parse.quote(name, safe='')}/"
+                   f"{urllib.parse.quote(path.name, safe='')}",
+        })
+
+    ext = _external_source(jdir, j)
+    if ext is not None:
+        out.append(_external_asset(name, jdir, j, ext, info))
+
+    def rank(a: dict) -> tuple:
+        if a["current"]:
+            return (0, a["name"].lower())
+        if a["source"]:
+            return (1, a["name"].lower())
+        if not a["artifact"]:
+            return (2, a["name"].lower())
+        return (3, a["name"].lower())
+
+    out.sort(key=rank)
+    return {"assets": out, "source": src.name if src.name else None, "video": video}
+
+
+def _receive_asset(name: str, filename: str, rfile, length: int) -> str:
+    jdir = _job_dir(name)
+    if not (jdir / "job.json").exists():
+        raise FileNotFoundError(name)
+    original = Path(filename or "asset").name
+    kind = _media_kind(original)
+    if kind is None:
+        raise ValueError("asset must be a video, image or audio file")
+    stem = _slug(Path(original).stem)[:48] or "asset"
+    suffix = Path(original).suffix.lower()
+    candidate, n = f"{stem}{suffix}", 2
+    while (jdir / candidate).exists():
+        candidate = f"{stem}-{n}{suffix}"
+        n += 1
+    dest = jdir / candidate
+    tmp = dest.with_name(dest.name + ".part")
+    got = 0
+    with open(tmp, "wb") as f:
+        while got < length:
+            chunk = rfile.read(min(1024 * 1024, length - got))
+            if not chunk:
+                break
+            f.write(chunk)
+            got += len(chunk)
+    if got != length:
+        tmp.unlink(missing_ok=True)
+        raise ValueError("upload interrupted")
+    tmp.replace(dest)
+    return candidate
+
+
+# ------------------------------------------------------------ thumbnails
+
+def _render_cached(jdir: Path, folder: str, src: Path, ext: str,
+                   args: list, timeout: int = 60) -> Path:
+    st = src.stat()
+    outdir = jdir / folder
+    outdir.mkdir(parents=True, exist_ok=True)
+    out = outdir / f"{src.stem}-{st.st_mtime_ns}{ext}"
+    if out.exists() and out.stat().st_size > 0:
+        return out
+    tmp = out.with_name(out.stem + "-tmp" + out.suffix)
+    cmd = [util.FFMPEG, "-hide_banner", "-loglevel", "error", "-y", "-nostdin"]
+    cmd += [str(a) for a in args] + [str(tmp)]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, timeout=timeout)
+    except (subprocess.TimeoutExpired, OSError) as e:
+        tmp.unlink(missing_ok=True)
+        raise RuntimeError(f"preview render failed: {e}") from e
+    if proc.returncode != 0 or not tmp.exists() or tmp.stat().st_size == 0:
+        tmp.unlink(missing_ok=True)
+        detail = (proc.stderr or b"")[-300:].decode("utf-8", "replace")
+        raise RuntimeError(f"preview render failed: {detail or 'no output'}")
+    tmp.replace(out)
+    return out
+
+
+def _thumb_file(jdir: Path, src: Path) -> Path:
+    kind = _media_kind(src.name)
+    if kind == "image":
+        args = ["-i", src, "-frames:v", "1", "-vf", "scale=360:-2", "-q:v", "4"]
+        return _render_cached(jdir, ".thumbs", src, ".jpg", args)
+    if kind == "video":
+        dur = float(_probe(src).get("duration") or 0)
+        ss = min(max(dur * 0.25, 0.0), 1.0) if dur else 0.0
+        args = ["-ss", f"{ss:.3f}", "-i", src, "-frames:v", "1",
+                "-vf", "scale=360:-2", "-q:v", "4"]
+        return _render_cached(jdir, ".thumbs", src, ".jpg", args)
+    if kind == "audio":
+        args = ["-i", src, "-filter_complex",
+                "aformat=channel_layouts=stereo,"
+                "showwavespic=s=360x200:colors=#5b8cff:scale=sqrt",
+                "-frames:v", "1"]
+        return _render_cached(jdir, ".thumbs", src, ".png", args)
+    raise FileNotFoundError(src.name)
+
+
+def _wave_file(jdir: Path, src: Path) -> Path:
+    info = _probe(src)
+    if not info.get("has_audio"):
+        raise ValueError("this file has no audio")
+    args = ["-i", src, "-filter_complex",
+            "aformat=channel_layouts=stereo,"
+            "showwavespic=s=1200x180:colors=#5b8cff:scale=sqrt",
+            "-frames:v", "1"]
+    return _render_cached(jdir, ".wave", src, ".png", args)
+
+
+# --------------------------------------------------------------- timeline
+
+def _art_meta(arts: dict, name: str) -> dict:
+    return (arts.get(name) or {}).get("meta") or {}
+
+
+def _clip_len(arts: dict, name: str, total: float) -> float:
+    meta = _art_meta(arts, name)
+    clip = meta.get("clip_seconds")
+    if clip is None:
+        duration = meta.get("duration")
+        clip = duration if duration and duration < total - 0.05 else 0
+    try:
+        return max(0.0, min(float(clip or 0), total))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _timeline(name: str) -> dict:
+    jdir = _job_dir(name)
+    if not (jdir / "job.json").exists():
+        raise FileNotFoundError(name)
+    j = jobmod.Job.load(jdir)
+    info = j.data.get("info", {})
+    arts = j.data.get("artifacts", {})
+    video = _current_video(j, _video_artifacts(j))
+    if not video:
+        src = Path(j.data.get("video", ""))
+        try:
+            if src.exists() and src.resolve().parent == jdir.resolve():
+                video = src.name
+        except OSError:
+            video = None
+    cur_meta = _art_meta(arts, video) if video else {}
+    cur_info = _probe(j.apath(video)) if video else {}
+    ext = _external_source(jdir, j)
+    ext_info = _probe(ext) if ext is not None and not video else {}
+    duration = (cur_meta.get("duration") or cur_info.get("duration")
+                or ext_info.get("duration") or info.get("duration") or 0)
+    try:
+        duration = round(float(duration), 3)
+    except (TypeError, ValueError):
+        duration = 0.0
+    width = (cur_meta.get("width") or cur_info.get("width")
+             or ext_info.get("width") or info.get("width"))
+    height = (cur_meta.get("height") or cur_info.get("height")
+              or ext_info.get("height") or info.get("height"))
+    fps = cur_info.get("fps") or ext_info.get("fps") or info.get("fps")
+    has_audio = bool(cur_info.get("has_audio",
+                                  ext_info.get("has_audio", info.get("has_audio"))))
+
+    intro_len = _clip_len(arts, "intro.mp4", duration) if video == "final.mp4" else 0.0
+    outro_len = _clip_len(arts, "outro.mp4", duration) if video == "final.mp4" else 0.0
+    segments: list[dict] = []
+    if duration > 0:
+        if intro_len or outro_len:
+            main_end = max(intro_len, duration - outro_len)
+            if intro_len > 0:
+                segments.append({"start": 0.0, "end": round(intro_len, 3),
+                                 "label": "Intro", "kind": "intro"})
+            if main_end > intro_len + 0.02:
+                segments.append({"start": round(intro_len, 3),
+                                 "end": round(main_end, 3),
+                                 "label": "Main edit", "kind": "main"})
+            if outro_len > 0:
+                segments.append({"start": round(main_end, 3),
+                                 "end": duration, "label": "Outro", "kind": "outro"})
+        if not segments:
+            label = "Source" if not any(a["name"] == video for a in _video_artifacts(j)) else "Edit"
+            segments.append({"start": 0.0, "end": duration,
+                             "label": label, "kind": "main"})
+
+    captions = None
+    if (jdir / "captions.ass").exists():
+        cstart, cend = 0.0, duration
+        if segments and segments[0]["kind"] == "intro":
+            cstart = segments[0]["end"]
+        if segments and segments[-1]["kind"] == "outro":
+            cend = segments[-1]["start"]
+        count = _art_meta(arts, "captions.ass").get("lines")
+        if count is None:
+            try:
+                transcript = util.read_json(jdir / "transcript.json")
+                segs = transcript.get("segments")
+                count = len(segs) if isinstance(segs, list) else None
+            except Exception:
+                count = None
+        captions = {"start": round(cstart, 3), "end": round(cend, 3),
+                    "count": count, "file": "captions.ass"}
+
+    overlays = []
+    for fname, meta in arts.items():
+        if not (fname.startswith("overlay_") and fname.endswith(".mp4")):
+            continue
+        m = meta.get("meta") or {}
+        if m.get("at") is None or not (jdir / fname).exists():
+            continue
+        try:
+            start = float(m.get("at") or 0)
+            end = float(m["to"]) if m.get("to") is not None else duration
+        except (TypeError, ValueError):
+            continue
+        if duration and start >= duration:
+            continue
+        media = Path(str(m.get("media") or "")).name
+        overlays.append({
+            "start": round(max(0.0, start), 3),
+            "end": round(min(duration or end, max(end, start + 0.05)), 3),
+            "kind": m.get("kind") or "overlay",
+            "label": media or fname,
+            "media": media or None,
+            "file": fname,
+        })
+    overlays.sort(key=lambda o: o["start"])
+
+    cut = None
+    try:
+        plan = util.read_json(jdir / "cut_plan.json")
+        summary = plan.get("summary") or {}
+        cut = {
+            "removed": summary.get("removed_seconds", plan.get("removed_seconds")),
+            "kept": summary.get("edited_seconds"),
+            "pieces": summary.get("pieces_kept"),
+            "ranges": plan.get("keep_seconds") or [],
+        }
+    except Exception:
+        pass
+
+    source = Path(j.data.get("video", ""))
+    try:
+        wave_v = (j.apath(video).stat().st_mtime_ns if video
+                  else ext.stat().st_mtime_ns if ext is not None else 0)
+    except OSError:
+        wave_v = round(duration * 1000)
+    quote = urllib.parse.quote
+    if has_audio and video:
+        waveform = f"/waveform/{quote(name, safe='')}/{quote(video, safe='')}?v={wave_v}"
+    elif has_audio and ext is not None:
+        waveform = f"/source_wave/{quote(name, safe='')}?v={wave_v}"
+    else:
+        waveform = None
+    return {
+        "job": name,
+        "video": video,
+        "duration": duration,
+        "width": width,
+        "height": height,
+        "fps": fps,
+        "has_audio": has_audio,
+        "segments": segments,
+        "captions": captions,
+        "overlays": overlays,
+        "audio": {
+            "file": video or (ext.name if ext is not None else None),
+            "present": has_audio,
+            "waveform": waveform,
+        },
+        "cut": cut,
+        "source": {
+            "name": Path(j.data.get("source_name") or source.name).name,
+            "duration": info.get("duration"),
+        },
+    }
 
 
 def _start_run(name: str, raw_opts: dict) -> None:
@@ -313,284 +752,6 @@ def _receive_upload(name: str, filename: str, rfile, length: int) -> str:
     return name
 
 
-# -------------------------------------------------------------------- html
-
-HTML = """<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>vidmill — automatic video editing</title>
-<style>
-:root{--bg:#0f1115;--card:#171a21;--line:#262b36;--fg:#e8ebf1;--dim:#8b93a7;--acc:#5b8cff;--ok:#3ecf8e;--warn:#f2b84b}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-header{padding:22px 28px;border-bottom:1px solid var(--line);display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
-h1{margin:0;font-size:22px;letter-spacing:.4px}
-h2{margin:0 0 14px;font-size:15px;text-transform:uppercase;letter-spacing:1.2px;color:var(--dim)}
-h2.sect{margin-top:26px}
-.sub{color:var(--dim)}
-main{max-width:1020px;margin:0 auto;padding:22px 18px 60px;display:grid;gap:18px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px}
-.hidden{display:none}
-#drop{border:2px dashed var(--line);border-radius:12px;padding:30px;text-align:center;color:var(--dim);transition:.2s}
-#drop.hot{border-color:var(--acc);color:var(--fg);background:#141a2b}
-.btn{display:inline-block;padding:9px 16px;border-radius:9px;border:1px solid var(--line);background:#1d222c;color:var(--fg);cursor:pointer;text-decoration:none;font-size:14px}
-.btn:hover{border-color:var(--acc)}
-.btn.primary{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
-.btn:disabled{opacity:.45;cursor:not-allowed}
-.row{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
-input[type=text]{flex:1;min-width:220px;padding:9px 12px;border-radius:9px;border:1px solid var(--line);background:#12151b;color:var(--fg)}
-.checklist{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px 18px;margin-top:16px;color:var(--fg);font-size:14px}
-.checklist label{display:flex;gap:8px;align-items:center;cursor:pointer;color:var(--dim)}
-.checklist input[type=checkbox]{accent-color:var(--acc)}
-.wmrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.wmrow input[type=text]{min-width:170px;flex:0 1 200px;padding:5px 9px;font-size:13px}
-.note{color:var(--dim);font-size:13px;margin-top:12px;line-height:1.45}
-.msg{margin-top:12px;color:var(--warn);min-height:20px;font-size:14px}
-.jobs{display:grid;gap:10px}
-.job{display:flex;justify-content:space-between;gap:12px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;cursor:pointer;align-items:center}
-.job:hover{border-color:var(--acc)}
-.job .meta{color:var(--dim);font-size:13px}
-.pill{font-size:12px;padding:2px 9px;border-radius:99px;border:1px solid var(--line);color:var(--dim)}
-.pill.run{color:var(--warn);border-color:var(--warn)}
-.pill.done{color:var(--ok);border-color:var(--ok)}
-video{width:100%;max-height:70vh;border-radius:10px;background:#000;margin-top:14px}
-.log{background:#0b0d11;border:1px solid var(--line);border-radius:10px;padding:14px;max-height:340px;overflow:auto;font:12.5px/1.45 ui-monospace,Menlo,Consolas,monospace;color:#c9d3e6;white-space:pre-wrap;margin-top:8px}
-.arts{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
-.arts a{font-size:13px}
-.dhead{display:flex;justify-content:space-between;align-items:center;gap:10px}
-</style></head>
-<body>
-<header><h1>vidmill</h1><span class="sub">drop a video — get a finished edit, free and entirely on your machine</span></header>
-<main>
-<section class="card" id="newcard">
-  <h2>New edit</h2>
-  <div id="drop">Drop a video here, or <label class="btn" style="margin-left:6px">browse<input type="file" id="file" accept="video/*" hidden></label>
-    <div id="picked" class="meta" style="margin-top:8px;color:var(--dim)"></div></div>
-  <div class="row">
-    <input type="text" id="path" placeholder="…or an absolute path on this machine">
-    <input type="text" id="jobname" placeholder="job name (optional)">
-  </div>
-  <div class="checklist">
-    <label><input type="checkbox" id="n_silences" checked> Remove silences</label>
-    <label><input type="checkbox" id="n_still" checked> Remove still frames</label>
-    <label><input type="checkbox" id="n_mistakes" checked> Remove retakes</label>
-    <label><input type="checkbox" id="n_captions" checked> Burn captions</label>
-    <label><input type="checkbox" id="n_clean" checked> Clean audio</label>
-    <div class="wmrow"><label><input type="checkbox" id="n_watermark" checked> Remove watermark</label>
-      <input type="text" id="n_wmregion" placeholder="auto-detect or X:Y:W:H"></div>
-  </div>
-  <div class="note">These all run in the free local pass — no AI, no API key, no upload. The edit starts as soon as the video is in.</div>
-  <div class="row"><button class="btn primary" id="go" disabled>Upload &amp; edit</button></div>
-  <div class="msg" id="msg"></div>
-</section>
-<section class="card"><h2>Jobs</h2><div class="jobs" id="list"></div></section>
-<section class="card hidden" id="detail">
-  <div class="dhead"><h2 id="dtitle"></h2><span class="pill" id="dstate"></span></div>
-  <video id="player" controls playsinline></video>
-  <div class="row">
-    <button class="btn primary" id="run">Apply &amp; re-run from source</button>
-    <button class="btn" id="cancel">Cancel</button>
-    <a class="btn" id="dl" download>Download</a>
-  </div>
-  <div class="checklist">
-    <label><input type="checkbox" id="d_silences" checked> Remove silences</label>
-    <label><input type="checkbox" id="d_still" checked> Remove still frames</label>
-    <label><input type="checkbox" id="d_mistakes" checked> Remove retakes</label>
-    <label><input type="checkbox" id="d_captions" checked> Burn captions</label>
-    <label><input type="checkbox" id="d_clean" checked> Clean audio</label>
-    <div class="wmrow"><label><input type="checkbox" id="d_watermark" checked> Remove watermark</label>
-      <input type="text" id="d_wmregion" placeholder="auto-detect or X:Y:W:H"></div>
-  </div>
-  <div class="note">Re-running resets this job's artifacts and starts again from the original source.</div>
-  <div class="arts" id="arts"></div>
-  <h2 class="sect">Log</h2><pre class="log" id="log"></pre>
-  <h2 class="sect">Ask AI to change this edit</h2>
-  <div class="row">
-    <input type="text" id="aiprompt" placeholder="e.g. cut the pause at 0:42 and add my logo top-right">
-    <button class="btn" id="ai">Ask AI</button>
-  </div>
-  <div class="note" id="aihint">Optional. The AI can call any vidmill tool; only text and tool results leave the machine.</div>
-  <pre class="log" id="ailog"></pre>
-</section>
-</main>
-<script>
-var current=null,fileObj=null,timer=null,aiTimer=null,optsLoaded=false;
-
-function $(s){return document.querySelector(s)}
-function fmt(n){if(n==null)return "?";var m=Math.floor(n/60),s=Math.round(n%60);return m+":"+(s<10?"0":"")+s}
-function enc(s){return encodeURIComponent(s)}
-function setMsg(t){$("#msg").textContent=t||""}
-function picked(f){fileObj=f;var p=$("#picked");p.textContent=f?(f.name+"  "+(f.size/1048576).toFixed(1)+" MB"):"";$("#go").disabled=!(f||$("#path").value.trim())}
-
-function readOpts(prefix){
-  var on=$("#"+prefix+"watermark").checked;
-  var region=$("#"+prefix+"wmregion").value.trim();
-  return {
-    silences:$("#"+prefix+"silences").checked,
-    still:$("#"+prefix+"still").checked,
-    mistakes:$("#"+prefix+"mistakes").checked,
-    captions:$("#"+prefix+"captions").checked,
-    clean:$("#"+prefix+"clean").checked,
-    watermark:on?(region||"auto"):"off"
-  };
-}
-function writeOpts(prefix,o){
-  o=o||{};
-  $("#"+prefix+"silences").checked=o.silences!==false;
-  $("#"+prefix+"still").checked=o.still!==false;
-  $("#"+prefix+"mistakes").checked=o.mistakes!==false;
-  $("#"+prefix+"captions").checked=o.captions!==false;
-  $("#"+prefix+"clean").checked=o.clean!==false;
-  var wm=o.watermark||"auto";
-  $("#"+prefix+"watermark").checked=wm!=="off";
-  $("#"+prefix+"wmregion").value=(wm!=="auto"&&wm!=="off")?wm:"";
-}
-
-$("#file").addEventListener("change",function(e){picked(e.target.files[0]||null)});
-$("#path").addEventListener("input",function(){picked(fileObj)});
-$("#drop").addEventListener("dragover",function(e){e.preventDefault();$("#drop").classList.add("hot")});
-$("#drop").addEventListener("dragleave",function(){$("#drop").classList.remove("hot")});
-$("#drop").addEventListener("drop",function(e){e.preventDefault();$("#drop").classList.remove("hot");picked(e.dataTransfer.files[0]||null)});
-
-$("#go").onclick=async function(){
-  var o=readOpts("n_"),name=$("#jobname").value.trim(),path=$("#path").value.trim();
-  setMsg("");$("#go").disabled=true;
-  try{
-    var job;
-    if(fileObj&&!path){
-      setMsg("uploading…");
-      var q=new URLSearchParams({filename:fileObj.name});if(name)q.set("name",name);
-      var r=await fetch("/api/upload?"+q,{method:"PUT",body:fileObj});
-      var d=await r.json();if(!r.ok)throw new Error(d.error||"upload failed");
-      job=d.name;
-    }else{
-      if(!path)throw new Error("choose a video or paste a path on this machine");
-      var r=await fetch("/api/jobs",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({name:name||undefined,path:path})});
-      var d=await r.json();if(!r.ok)throw new Error(d.error||"could not open video");
-      job=d.name;
-    }
-    setMsg("starting the free local edit…");
-    var rr=await fetch("/api/jobs/"+enc(job)+"/run",{method:"POST",
-      headers:{"Content-Type":"application/json"},body:JSON.stringify(o)});
-    var dd=await rr.json();if(!rr.ok)throw new Error(dd.error||"could not start the edit");
-    fileObj=null;$("#picked").textContent="";$("#path").value="";$("#jobname").value="";
-    $("#go").disabled=true;
-    openJob(job);refreshJobs();
-  }catch(err){setMsg(String(err.message||err));$("#go").disabled=false}
-};
-
-async function refreshJobs(){
-  try{
-    var r=await fetch("/api/jobs");var jobs=await r.json();
-    var el=$("#list");el.innerHTML="";
-    if(!jobs.length){el.innerHTML='<div class="meta" style="color:var(--dim)">no jobs yet — pick a video above and it starts automatically</div>';return}
-    jobs.forEach(function(j){
-      var row=document.createElement("div");row.className="job";
-      var left=document.createElement("div");
-      var b=document.createElement("b");b.textContent=j.name;left.appendChild(b);
-      var m=document.createElement("div");m.className="meta";
-      m.textContent=fmt(j.duration)+" · "+(j.video||"no output yet");
-      left.appendChild(m);
-      var pill=document.createElement("span");
-      pill.className="pill "+(j.running||j.ai_running?"run":(j.finished?"done":""));
-      pill.textContent=j.running?"editing…":(j.ai_running?"AI editing…":(j.finished?"ready":"partial"));
-      row.appendChild(left);row.appendChild(pill);
-      row.onclick=function(){openJob(j.name)};
-      el.appendChild(row);
-    });
-  }catch(e){}
-}
-
-function openJob(name){
-  current=name;optsLoaded=false;$("#detail").classList.remove("hidden");
-  $("#dtitle").textContent=name;$("#ailog").textContent="";
-  $("#detail").scrollIntoView({behavior:"smooth"});
-  if(timer)clearInterval(timer);if(aiTimer)clearTimeout(aiTimer);
-  poll();timer=setInterval(poll,1500);
-}
-
-async function poll(){
-  if(!current)return;
-  try{
-    var r=await fetch("/api/jobs/"+enc(current));if(!r.ok)return;
-    var s=await r.json();
-    var state=s.running?"editing…":(s.ai_running?"AI editing…":(s.finished?"ready":"idle"));
-    $("#dstate").textContent=state;
-    $("#dstate").className="pill "+((s.running||s.ai_running)?"run":(s.finished?"done":""));
-    $("#run").disabled=s.running||s.ai_running;
-    $("#cancel").disabled=!(s.running||s.ai_running);
-    $("#ai").disabled=s.running||s.ai_running||!s.ai_available;
-    $("#aihint").textContent=s.ai_available
-      ?"Optional. The AI can call any vidmill tool; only text and tool results leave the machine."
-      :"Set VIDMILL_AI_KEY (or OPENAI_API_KEY) in the server environment to enable AI edits.";
-    if(!optsLoaded){writeOpts("d_",s.opts);optsLoaded=true}
-    var log=await fetch("/api/jobs/"+enc(current)+"/log");
-    var lt=(await log.json()).text||"";
-    var el=$("#log");var stick=el.scrollTop+el.clientHeight>=el.scrollHeight-40;
-    el.textContent=lt;if(stick)el.scrollTop=el.scrollHeight;
-    if(s.video){
-      var meta=(s.artifacts.find(function(a){return a.name===s.video})||{}).created||"";
-      var src="/media/"+enc(current)+"/"+enc(s.video)+"?t="+enc(meta);
-      if($("#player").getAttribute("src")!==src)$("#player").setAttribute("src",src);
-      $("#dl").href=src;$("#dl").setAttribute("download",s.video);
-    }
-    var arts=$("#arts");arts.innerHTML="";
-    s.artifacts.slice().reverse().forEach(function(a){
-      var link=document.createElement("a");link.className="btn";
-      link.href="/media/"+enc(current)+"/"+enc(a.name);
-      link.textContent=a.name+" ("+(a.bytes/1048576).toFixed(1)+" MB)";
-      arts.appendChild(link);
-    });
-    if(s.ai_running&&!aiTimer)pollAI();
-  }catch(e){}
-}
-
-async function pollAI(){
-  if(!current)return;
-  try{
-    var r=await fetch("/api/jobs/"+enc(current)+"/ai");var s=await r.json();
-    var el=$("#ailog");var stick=el.scrollTop+el.clientHeight>=el.scrollHeight-40;
-    el.textContent=s.text||"";if(stick)el.scrollTop=el.scrollHeight;
-    if(s.running){aiTimer=setTimeout(pollAI,1500);return}
-    aiTimer=null;poll();
-  }catch(e){aiTimer=null}
-}
-
-$("#run").onclick=async function(){
-  if(!current)return;
-  if(!confirm("Reset this job's artifacts and run the free edit again from the original source?"))return;
-  var r=await fetch("/api/jobs/"+enc(current)+"/run",{method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify(Object.assign(readOpts("d_"),{restart:true}))});
-  if(!r.ok){var d=await r.json();alert(d.error||"could not start")}
-  optsLoaded=false;$("#log").textContent="";poll();
-};
-
-$("#cancel").onclick=async function(){
-  if(!current)return;
-  await fetch("/api/jobs/"+enc(current)+"/cancel",{method:"POST"});poll();
-};
-
-$("#ai").onclick=askAI;
-$("#aiprompt").addEventListener("keydown",function(e){if(e.key==="Enter")askAI()});
-async function askAI(){
-  if(!current)return;
-  var p=$("#aiprompt").value.trim();if(!p)return;
-  $("#ai").disabled=true;$("#ailog").textContent="starting the AI editor…";
-  try{
-    var r=await fetch("/api/jobs/"+enc(current)+"/ai",{method:"POST",
-      headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt:p})});
-    var d=await r.json();if(!r.ok)throw new Error(d.error||"could not start the AI");
-    $("#aiprompt").value="";pollAI();poll();
-  }catch(e){$("#ailog").textContent=String(e.message||e);$("#ai").disabled=false}
-}
-
-refreshJobs();setInterval(refreshJobs,4000);
-</script></body></html>
-"""
-
-
 # ----------------------------------------------------------------- handler
 
 class Handler(BaseHTTPRequestHandler):
@@ -647,8 +808,18 @@ class Handler(BaseHTTPRequestHandler):
                         if AI_RUNS.get(name) and not running:
                             _close(AI_RUNS[name])
                     return self._json(200, {"running": running, "text": _ai_text(name)})
+                if len(parts) == 4 and parts[3] == "assets":
+                    return self._json(200, _assets(name))
+                if len(parts) == 4 and parts[3] == "timeline":
+                    return self._json(200, _timeline(name))
             if parts[0] == "media" and len(parts) == 3:
                 return self._media(parts[1], parts[2])
+            if parts[0] == "thumb" and len(parts) == 3:
+                return self._thumb(parts[1], parts[2])
+            if parts[0] == "waveform" and len(parts) == 3:
+                return self._waveform(parts[1], parts[2])
+            if parts[0] in ("source", "source_thumb", "source_wave") and len(parts) == 2:
+                return self._source(parts[1], parts[0])
             self._err(404, "not found")
         except FileNotFoundError:
             self._err(404, "job not found")
@@ -690,50 +861,57 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_PUT(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
-        if parsed.path != "/api/upload":
-            return self._err(404, "not found")
+        parts = [p for p in parsed.path.split("/") if p]
         q = urllib.parse.parse_qs(parsed.query)
         length = int(self.headers.get("Content-Length") or 0)
-        if length <= 0:
-            return self._err(400, "empty upload")
         try:
-            name = _receive_upload((q.get("name") or [""])[0],
-                                   (q.get("filename") or [""])[0],
-                                   self.rfile, length)
-            return self._json(200, {"name": name})
+            if parsed.path == "/api/upload":
+                if length <= 0:
+                    return self._err(400, "empty upload")
+                name = _receive_upload((q.get("name") or [""])[0],
+                                       (q.get("filename") or [""])[0],
+                                       self.rfile, length)
+                return self._json(200, {"name": name})
+            if parts[:2] == ["api", "jobs"] and len(parts) == 4 and parts[3] == "assets":
+                if length <= 0:
+                    return self._err(400, "empty upload")
+                name = parts[2]
+                _job_dir(name)  # validate
+                asset = _receive_asset(name, (q.get("filename") or [""])[0],
+                                       self.rfile, length)
+                return self._json(200, {"name": asset})
+            self._err(404, "not found")
+        except FileNotFoundError:
+            self._err(404, "job not found")
         except ValueError as e:
-            return self._err(400, str(e))
+            self._err(400, str(e))
         except Exception as e:  # noqa: BLE001
-            return self._err(500, f"{type(e).__name__}: {e}")
+            self._err(500, f"{type(e).__name__}: {e}")
 
     # -------------------------------------------------------------- media
-    def _media(self, name: str, filename: str) -> None:
-        jdir = _job_dir(name)
-        fname = Path(filename).name
-        path = (jdir / fname).resolve()
-        if path.parent != jdir or not path.exists() or path.suffix.lower() != ".mp4":
-            return self._err(404, "not found")
+    def _send_file(self, path: Path, ranged: bool = True) -> None:
         size = path.stat().st_size
-        ctype = mimetypes.guess_type(fname)[0] or "video/mp4"
+        ctype = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
         start, end, code = 0, size - 1, 200
         rng = self.headers.get("Range")
-        if rng and rng.startswith("bytes="):
+        if ranged and rng and rng.startswith("bytes="):
             a, _, b = rng[6:].partition("-")
             try:
                 start = int(a) if a else 0
                 end = int(b) if b else size - 1
             except ValueError:
                 start, end = 0, size - 1
-            if start >= size:
+            if start >= size or end < start:
                 self.send_response(416)
                 self.send_header("Content-Range", f"bytes */{size}")
                 self.end_headers()
                 return
+            end = min(end, size - 1)
             code = 206
         length = end - start + 1
         self.send_response(code)
         self.send_header("Content-Type", ctype)
-        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Accept-Ranges", "bytes" if ranged else "none")
         self.send_header("Content-Length", str(length))
         if code == 206:
             self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
@@ -747,6 +925,60 @@ class Handler(BaseHTTPRequestHandler):
                     break
                 self.wfile.write(chunk)
                 left -= len(chunk)
+
+    def _media(self, name: str, filename: str) -> None:
+        jdir = _job_dir(name)
+        try:
+            path = _job_file(jdir, filename)
+        except FileNotFoundError:
+            return self._err(404, "not found")
+        self._send_file(path)
+
+    def _thumb(self, name: str, filename: str) -> None:
+        jdir = _job_dir(name)
+        try:
+            src = _job_file(jdir, filename)
+            out = _thumb_file(jdir, src)
+        except FileNotFoundError:
+            return self._err(404, "not found")
+        except Exception as e:  # noqa: BLE001
+            return self._err(404, f"no preview: {e}")
+        self._send_file(out, ranged=False)
+
+    def _waveform(self, name: str, filename: str) -> None:
+        jdir = _job_dir(name)
+        try:
+            src = _job_file(jdir, filename)
+            out = _wave_file(jdir, src)
+        except FileNotFoundError:
+            return self._err(404, "not found")
+        except ValueError as e:
+            return self._err(404, str(e))
+        except Exception as e:  # noqa: BLE001
+            return self._err(404, f"no waveform: {e}")
+        self._send_file(out, ranged=False)
+
+    def _source(self, name: str, mode: str) -> None:
+        """Serve the original video when a project was opened by path.
+
+        Only the exact file recorded in job.json is exposed, and only while it
+        still lives outside the job folder.
+        """
+        jdir = _job_dir(name)
+        if not (jdir / "job.json").exists():
+            return self._err(404, "job not found")
+        src = _external_source(jdir, jobmod.Job.load(jdir))
+        if src is None:
+            return self._err(404, "no external source")
+        if mode == "source":
+            return self._send_file(src)
+        try:
+            out = _thumb_file(jdir, src) if mode == "source_thumb" else _wave_file(jdir, src)
+        except ValueError as e:
+            return self._err(404, str(e))
+        except Exception as e:  # noqa: BLE001
+            return self._err(404, f"no preview: {e}")
+        self._send_file(out, ranged=False)
 
 
 # -------------------------------------------------------------------- cli
@@ -779,6 +1011,8 @@ def _check() -> None:
             body = r.read().decode()
             assert r.status == 200 and "<!doctype html" in body.lower(), "bad index"
             assert "Remove watermark" in body and "Ask AI" in body, "ui sections missing"
+            for part in ("Media bin", "Timeline", "AI editor", "assetGrid", "tlInner"):
+                assert part in body, f"studio ui missing {part}"
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/jobs", timeout=10) as r:
             jobs = json.load(r)
             assert jobs == [], jobs
