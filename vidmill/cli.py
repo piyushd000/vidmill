@@ -17,9 +17,10 @@ from .tools import REGISTRY
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(
         prog="vmill",
-        description=("vidmill — open-source AI video editing toolkit. "
-                     "FFmpeg, Faster-Whisper, FaceFusion and DeepFilterNet exposed "
-                     "as connected tools driven from one job directory."),
+        description=("vidmill — open-source, local-first AI video editing. "
+                     "Upload once and get a finished edit: pauses, still frames "
+                     "and retakes removed, captions burned, audio cleaned, "
+                     "watermarks gone. One job directory connects every tool."),
     )
     ap.add_argument("--version", action="version", version=f"vmill {__version__}")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -104,6 +105,16 @@ def doctor_cmd(a) -> None:
     ok = bool(py and os.path.isdir(repo))
     check("FaceFusion (env facefusion)", ok,
           f"{repo}" if ok else "conda env 'facefusion' + repo (set AVF_FACEFUSION_DIR) — optional")
+
+    npx = shutil.which("npx")
+    node = shutil.which("node")
+    if npx and node:
+        nver = util.run([node, "--version"], check=False, quiet=True).stdout.strip()
+        check("HyperFrames (npx)", True,
+              f"node {nver} — fetched on demand for HTML intros/outros")
+    else:
+        check("HyperFrames (npx)", False,
+              "Node.js 22+ for HTML intros/outros — optional, `vmill hyperframes --check`")
 
     check("gh CLI", bool(shutil.which("gh")), "for publishing to GitHub (optional)")
 

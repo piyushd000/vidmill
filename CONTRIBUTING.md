@@ -36,6 +36,9 @@ vmill doctor              # everything core should be OK
 ```
 
 If you plan to work on the face-swap module, run `./install.sh --extras`.
+Node.js 22+ is only needed for `vmill hyperframes`; AI editing (`vmill ai`)
+needs an OpenAI-compatible key in the environment. Neither is required
+for the core test suite.
 
 ## Repository layout
 
@@ -64,9 +67,16 @@ Run exactly what CI runs:
 ```bash
 python -m compileall vidmill
 vmill doctor
+vmill hyperframes --check
 vmill tools --json | python -m json.tool > /dev/null
 vmill mcp --check
 vmill serve --check
+```
+
+If `registry.py` changed, regenerate and commit the manifest:
+
+```bash
+vmill tools --json > tools.json
 ```
 
 If your change touches a tool, also run it end to end on a small clip
@@ -117,7 +127,7 @@ git checkout -b fix/short-description upstream/main
 
 # Verify (see "Before you open a pull request")
 python -m compileall vidmill
-vmill mcp --check && vmill serve --check
+vmill mcp --check && vmill serve --check && vmill hyperframes --check
 
 git add -A
 git commit -m "fix: what changed and why"

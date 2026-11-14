@@ -29,6 +29,7 @@ STEP_ARTIFACT = {
     "transcribe": "transcript.json",
     "plan": "cut_plan.json",
     "cut": "cut.mp4",
+    "delogo": "delogo.mp4",
     "clean": "cleaned.mp4",
     "captions": "captioned.mp4",
     "face": "swapped.mp4",

@@ -1,12 +1,15 @@
 """Tool: auto — upload-and-walk-away editing, with an optional AI checkpoint.
 
 Everything before the checkpoint is free and local: transcription,
-pause removal, no-movement removal, mistake heuristics, denoising,
-captions, export. The paid LLM (any OpenAI-compatible API) gets ONE
-compact text call — no video upload — to suggest extra cuts. Without
-an API key the free result is still delivered.
+pause removal, no-movement removal, retake heuristics, watermark
+removal, denoising, captions, export. The paid LLM (any
+OpenAI-compatible API) gets ONE compact text call — no video upload —
+to suggest extra cuts. Without an API key the free result is still
+delivered.
 
   vmill auto myvideo.mp4 --job myedit
+  vmill auto myvideo.mp4 --job myedit --no-mistakes --watermark off
+  vmill auto myvideo.mp4 --job myedit --watermark 1180:30:90:60
   vmill auto myvideo.mp4 --job myedit --ai            # opt into 1 LLM call
   VIDMILL_AI_BASE=https://api.openai.com/v1 VIDMILL_AI_KEY=sk-... \
       VIDMILL_AI_MODEL=gpt-4o-mini vmill auto --job myedit --ai
@@ -44,7 +47,13 @@ SYSTEM = (
 def add_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("video", nargs="?", help="video to edit (opens/creates the job)")
     p.add_argument("--job", required=True)
-    p.add_argument("--mistakes", action="store_true", help="also drop heuristic retake cuts")
+    p.add_argument("--mistakes", action=argparse.BooleanOptionalAction, default=True,
+                   help="apply heuristic retake cuts (default: on)")
+    p.add_argument("--no-silence", action="store_true", help="keep pauses")
+    p.add_argument("--no-freeze", action="store_true", help="keep still frames")
+    p.add_argument("--watermark", default="auto", metavar="auto|off|X:Y:W:H",
+                   help="remove a watermark automatically, at a region, or not at all")
+    p.add_argument("--watermark-mode", choices=["delogo", "blur"], default="delogo")
     p.add_argument("--no-ai", action="store_true", help="skip the AI checkpoint entirely")
     p.add_argument("--no-captions", action="store_true")
     p.add_argument("--no-clean", action="store_true")
@@ -55,11 +64,35 @@ def add_args(p: argparse.ArgumentParser) -> None:
 def run(args: argparse.Namespace) -> None:
     from . import pipeline as pipeline_mod
 
-    steps = ["probe", "transcribe", "plan", "cut", "clean", "captions", "export"]
-    if args.no_clean:
-        steps.remove("clean")
-    if args.no_captions:
-        steps.remove("captions")
+    watermark = (args.watermark or "auto").strip()
+    wm_off = watermark.lower() == "off"
+    wm_auto = watermark.lower() == "auto"
+    if not wm_off and not wm_auto:
+        from .delogo import parse_region
+        parse_region(watermark)  # fail before spending time on transcription
+
+    steps = ["probe", "transcribe", "plan", "cut"]
+    if not wm_off:
+        steps.append("delogo")
+    if not args.no_clean:
+        steps.append("clean")
+    if not args.no_captions:
+        steps.append("captions")
+    steps.append("export")
+
+    opts = []
+    if args.no_silence:
+        opts.append("plan:@no-silence")
+    if not args.no_freeze:
+        opts += ["plan:@freeze", "plan:@freeze-quiet-only"]
+    if args.mistakes:
+        opts.append("plan:@mistakes")
+    if not wm_off and not wm_auto:
+        opts.append("delogo:region=" + watermark)
+    if not wm_off and args.watermark_mode != "delogo":
+        opts.append("delogo:mode=" + args.watermark_mode)
+    if args.export_preset != "final":
+        opts.append("export:preset=" + args.export_preset)
 
     ns = pipeline_mod.step_args("pipeline", ["--job", args.job])
     ns.job = args.job
@@ -67,9 +100,15 @@ def run(args: argparse.Namespace) -> None:
         ns.video = args.video
     ns.steps = ",".join(steps)
     ns.force = False
-    ns.opt = ["plan:@freeze", "plan:@freeze-quiet-only"]
-    if args.mistakes:
-        ns.opt.append("plan:@mistakes")
+    ns.opt = opts
+
+    print("free local pass: "
+          f"silences={'off' if args.no_silence else 'on'} "
+          f"still-frames={'off' if args.no_freeze else 'on'} "
+          f"retakes={'on' if args.mistakes else 'off'} "
+          f"watermark={'off' if wm_off else watermark} "
+          f"clean={'off' if args.no_clean else 'on'} "
+          f"captions={'off' if args.no_captions else 'on'}")
     pipeline_mod.run(ns)
 
     j = jobmod.Job.load(args.job)

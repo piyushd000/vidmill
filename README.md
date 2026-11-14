@@ -35,18 +35,22 @@ interviews — locally, with no account and no upload.
 ## Features
 
 - **One-command editing** — `vmill auto` goes from raw file to `final.mp4` with zero manual work
+- **Every non-AI edit, automatic** — pauses, still frames, retakes, captions, audio cleanup and watermark removal all run by default
 - **Zero AI bill by default** — the full edit runs locally; an optional single AI checkpoint costs a few cents at most
+- **AI editor on demand** — ask for changes in plain language and the model calls the same tools you do
 - **Speech-aware cuts** — pauses, still frames and false starts; video and audio always stay in sync
 - **Word-synced captions** — burned in, automatically re-timed after every cut
 - **Studio audio** — neural noise removal plus broadcast-standard loudness
+- **Watermark removal** — conservative auto-detection in the corners, or an exact pixel region
 - **No-copyright music & SFX** — verified commercial-safe catalog; list, download, mix
 - **B-roll & overlays** — logos, watermarks, picture-in-picture and full-frame cutaways
+- **HTML intros & outros** — render a HyperFrames composition and drop it onto the timeline
 - **Face swap** — optional module driven by a single reference photo
 - **Delivery presets** — YouTube H.264, compact HEVC, Shorts 1080×1920, landscape 1920×1080
 - **GPU acceleration** — used automatically when the hardware encoder is genuinely available
 - **Resumable job model** — every edit is a plain folder; inspect, archive or continue later
 - **Agent-ready** — JSON tool manifest and a built-in MCP server
-- **Local web UI** — drag, drop, watch the log, download the result
+- **Local web UI** — drop a video, every edit ticked, it starts on its own
 
 ## Install
 
@@ -73,14 +77,24 @@ vmill auto myvideo.mp4 --job myedit
 ```
 
 The free local pass probes the video, transcribes every word, removes
-pauses and still frames, optionally drops likely retakes, cleans the
+pauses, still frames and likely retakes, removes watermarks, cleans the
 audio, burns word-synced captions, and exports `myedit/final.mp4`.
 No API key is involved.
 
 ```bash
-vmill auto myvideo.mp4 --job myedit --mistakes   # also drop likely retakes
-vmill auto --job myedit --ai                     # opt into one AI review
+vmill auto myvideo.mp4 --job myedit                 # everything on
+vmill auto myvideo.mp4 --job myedit --no-mistakes   # keep retakes
+vmill auto myvideo.mp4 --job myedit --no-silence --no-freeze
+vmill auto myvideo.mp4 --job myedit --watermark off # keep the watermark
+vmill auto myvideo.mp4 --job myedit --watermark 1180:30:90:60
+vmill auto --job myedit --ai                        # opt into one AI review
 ```
+
+Watermark detection is deliberately conservative: it removes a wide,
+text-like overlay that stays fixed in a corner, and does nothing when it
+is unsure. Pass an explicit `X:Y:W:H` region for a graphic logo or an
+unusual spot. `--watermark-mode blur` keeps the background texture
+instead of interpolating it.
 
 With `--ai` and an OpenAI-compatible key, vidmill sends **one compact
 text digest** — never the video — asking what else should be cut. If no
@@ -92,6 +106,38 @@ export VIDMILL_AI_BASE=https://api.openai.com/v1 # any compatible API
 export VIDMILL_AI_MODEL=gpt-4o-mini
 ```
 
+### AI editor — change anything, in plain language
+
+`vmill ai` is a separate, optional loop where the model can call **any
+vidmill tool**: plan new cuts, remove a watermark, add a logo or B-roll,
+re-caption, change the export preset. It receives the job state and tool
+results only — never the video.
+
+```bash
+vmill ai --job myedit "cut the long pause at 0:42 and add my logo top-right"
+vmill ai --job myedit "remove the corner watermark and export for Shorts"
+vmill ai --job myedit --dry-run "..."    # show the request, make no call
+```
+
+Nothing changes without a tool call, every step is recorded in
+`job.json`, and a failed request leaves the job intact.
+
+### HTML intros & outros
+
+Render a HyperFrames HTML composition and place it at the start or end
+of the current cut, automatically matched to the job's resolution, frame
+rate and audio:
+
+```bash
+vmill hyperframes --job myedit --project ./intro --where intro
+vmill hyperframes --job myedit --project ./outro --where outro
+vmill hyperframes --job myedit --project ./card  --where render
+vmill hyperframes --check                        # is the toolchain ready?
+```
+
+Node.js 22+ is required; HyperFrames is fetched on demand through
+`npx`, so it is not a dependency of the rest of vidmill.
+
 ### Step by step
 
 ```bash
@@ -99,6 +145,7 @@ vmill probe myvideo.mp4 --job myedit      # open the video
 vmill transcribe --job myedit             # word-level transcript
 vmill plan --job myedit --mistakes        # cut plan
 vmill cut --job myedit                    # apply it -> cut.mp4
+vmill delogo --job myedit                 # remove a watermark
 vmill clean --job myedit                  # denoise + normalize
 vmill captions --job myedit               # burned-in captions
 vmill export --job myedit --preset shorts # delivery file
@@ -114,10 +161,17 @@ Every step skips work that already exists, so the chain is resumable.
 vmill serve --open        # http://127.0.0.1:8765
 ```
 
-Drag a video onto the page and press **Start edit**; the log streams
-live and the result plays in the browser when it is ready. Jobs live in
-`~/vmill-jobs` (`--dir` to change). The server is standard-library only
-and binds loopback by default.
+Drop a video onto the page and the free local pass starts immediately:
+the checklist below the upload area has every non-AI edit ticked by
+default — silences, still frames, retakes, captions, audio cleanup and
+watermark removal. Untick anything you want to keep, or paste an exact
+watermark region, and the next run starts again from the original
+source. The log streams live and the result plays in the browser when it
+is ready. The optional AI panel lets you ask for further changes in plain
+language; it greys out when no API key is configured.
+
+Jobs live in `~/vmill-jobs` (`--dir` to change). The server is
+standard-library only and binds loopback by default.
 
 ### Music & sound effects
 
@@ -143,6 +197,9 @@ vmill overlay --job myedit --video broll.mp4 --mode cutaway --at 5 --to 11
 Overlays stack as `overlay_1.mp4`, `overlay_2.mp4`, … and become the
 current video, so captions and export chain on top. `--spec
 overlays.json` applies a list in one run.
+
+To remove an existing watermark rather than add one, use `vmill delogo`
+(auto-detects text overlays in the corners, or pass `--region X:Y:W:H`).
 
 ### Face swap
 
@@ -185,11 +242,14 @@ drift from the product.
 | `vmill transcribe` | Word-level transcript + subtitle file |
 | `vmill plan` | Build the cut plan (pauses, still segments, retakes, agent cuts) |
 | `vmill cut` | Apply the plan — cuts stay perfectly in sync |
+| `vmill delogo` | Remove a watermark/logo (auto-detected or exact region) |
 | `vmill clean` | Denoise and normalize the audio |
 | `vmill captions` | Burn word-synced captions |
 | `vmill face` | Neural face swap from a reference photo |
+| `vmill ai` | Natural-language edits through any tool, via your own API key |
 | `vmill music` | No-copyright music & SFX: list, download, mix |
 | `vmill overlay` | Logos, watermarks and B-roll (pip or full-frame cutaway) |
+| `vmill hyperframes` | Render HTML intros/outros and place them on the timeline |
 | `vmill export` | Delivery presets: `final`, `hevc`, `shorts`, `yt` |
 | `vmill pipeline` | Run the whole chain, resumable |
 | `vmill mcp` | MCP server: every tool for AI agents over stdio |
@@ -204,9 +264,9 @@ produces the next artifact, and records what it did — which makes the
 chain resumable, inspectable and scriptable by humans and agents alike:
 
 ```
-probe ──► transcript ──► cut plan ──► cut ──► clean ──► captions ──► export
- (specs)   (the words)   (what to     (the    (studio   (burned in   (delivery
-                          drop)        edit)   audio)    sync)        file)
+probe ──► transcript ──► cut plan ──► cut ──► delogo ──► clean ──► captions ──► export
+ (specs)   (the words)   (what to     (the    (watermark  (studio   (burned in   (delivery
+                          drop)        edit)   removed)    audio)    sync)        file)
 ```
 
 Job folders are plain files: copy them, diff `job.json`, archive them,
@@ -216,6 +276,7 @@ or hand them to an agent.
 
 - Linux or macOS
 - Python 3.10+
+- Node.js 22+ only for HTML intros/outros (`vmill hyperframes`) — optional
 - ~5 GB free disk for optional model downloads (first use only)
 - A CPU is enough. A GPU accelerates transcription and delivery
   exports when a working hardware encoder is present — both are
@@ -250,6 +311,7 @@ git checkout -b fix/short-description
 # 3. make the change, then run the same checks as CI
 python -m compileall vidmill
 vmill doctor
+vmill hyperframes --check
 vmill tools --json | python -m json.tool > /dev/null
 vmill mcp --check
 vmill serve --check
@@ -288,8 +350,15 @@ only a compact text digest is sent — never the video.
 **How aggressive are the automatic cuts?**
 Conservative by default: obvious pauses are removed, still segments
 are dropped only where nobody is speaking, and likely retakes are
-applied only when asked. The optional AI review can only add a few
-reasoned cuts; you always have the final say.
+dropped with a confidence margin — `--no-mistakes` keeps them all. The
+optional AI review can only add a few reasoned cuts; you always have the
+final say.
+
+**Will it remove a watermark it shouldn't?**
+It only removes a wide, flat, text-like overlay that stays fixed in a
+corner across the whole video. If it is not confident, it does nothing
+and tells you. For graphic logos or unusual placements, pass the exact
+`--region X:Y:W:H`.
 
 **Can I drive it from scripts or an AI agent?**
 Yes — that is the design. Every tool is a stable CLI with declared

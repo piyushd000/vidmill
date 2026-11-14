@@ -61,6 +61,19 @@
    "engine": "ffmpeg trim/concat"
   },
   {
+   "name": "delogo",
+   "cmd": "vmill delogo --job <dir> [--region X:Y:W:H] [--mode delogo|blur]",
+   "purpose": "Remove a watermark/logo: conservative text-overlay auto-detection in the corners, or an explicit pixel region -> delogo.mp4.",
+   "inputs": {
+    "--region": "X:Y:W:H box (optional; auto-detects when omitted)",
+    "--mode": "delogo interpolation or blur"
+   },
+   "outputs": [
+    "delogo.mp4"
+   ],
+   "engine": "ffmpeg delogo / blur+overlay"
+  },
+  {
    "name": "clean",
    "cmd": "vmill clean --job <dir> [--engine auto|dfnet|ffmpeg] [--loudness -16]",
    "purpose": "Denoise + loudness-normalize audio -> cleaned.mp4.",
@@ -117,16 +130,34 @@
   },
   {
    "name": "auto",
-   "cmd": "vmill auto <video> --job <dir> [--ai] [--mistakes] [--export-preset final]",
-   "purpose": "Fully automatic edit with zero manual work: local free pass removes pauses, still segments and retakes, generates subtitles, cleans audio and exports. With --ai (and VIDMILL_AI_KEY set) makes ONE compact LLM call to suggest extra cuts; without a key it still delivers the free edit.",
+   "cmd": "vmill auto <video> --job <dir> [--ai] [--no-mistakes] [--no-silence] [--no-freeze] [--watermark auto|off|X:Y:W:H] [--export-preset final]",
+   "purpose": "Fully automatic edit with zero manual work: the local free pass removes pauses, still segments and retakes, removes watermarks, generates subtitles, cleans audio and exports. With --ai (and VIDMILL_AI_KEY set) makes ONE compact LLM call to suggest extra cuts; without a key it still delivers the free edit.",
    "inputs": {
     "--ai": "enable the single LLM checkpoint",
+    "--watermark": "auto (default), off, or X:Y:W:H",
+    "--no-mistakes": "keep retakes",
+    "--no-silence": "keep pauses",
+    "--no-freeze": "keep still frames",
     "--export-preset": "delivery preset"
    },
    "outputs": [
     "final.mp4"
    ],
    "engine": "vidmill local engines + optional OpenAI-compatible checkpoint"
+  },
+  {
+   "name": "ai",
+   "cmd": "vmill ai --job <dir> \"instruction\" [--max-steps 12] [--dry-run]",
+   "purpose": "AI editor: the model calls any vidmill tool through OpenAI-compatible function calling to customize the edit from plain language. Needs VIDMILL_AI_KEY (or OPENAI_API_KEY); the video is never uploaded.",
+   "inputs": {
+    "prompt": "what to change",
+    "--max-steps": "tool-call rounds",
+    "--dry-run": "show the request without calling"
+   },
+   "outputs": [
+    "edited job artifacts (usually final.mp4)"
+   ],
+   "engine": "OpenAI-compatible API + the local tool registry"
   },
   {
    "name": "overlay",
@@ -144,6 +175,23 @@
     "..."
    ],
    "engine": "vidmill local engines (overlay compositing)"
+  },
+  {
+   "name": "hyperframes",
+   "cmd": "vmill hyperframes --job <dir> (--project <dir> | --clip <mp4>) [--where intro|outro|render] [--quality draft|looks|delivery]",
+   "purpose": "Render a HyperFrames HTML composition and place it as an intro/outro, or render it on its own. Requires Node.js 22+; HyperFrames is fetched on demand through npx.",
+   "inputs": {
+    "--project": "HyperFrames project directory or .html composition",
+    "--clip": "already rendered clip to place",
+    "--where": "intro, outro or render only",
+    "--quality": "draft, looks or delivery"
+   },
+   "outputs": [
+    "intro.mp4",
+    "outro.mp4",
+    "hyperframes.mp4"
+   ],
+   "engine": "HyperFrames (HTML -> video via npx)"
   },
   {
    "name": "mcp",

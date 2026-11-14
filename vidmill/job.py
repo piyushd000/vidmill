@@ -9,6 +9,7 @@ Layout:
       transcript.srt
       cut_plan.json     segments to keep / drop + reasons
       cut.mp4           after applying the plan
+      delogo.mp4        after watermark removal
       cleaned.mp4       after audio cleanup
       captions.ass
       captioned.mp4
@@ -27,7 +28,7 @@ JOB_FILE = "job.json"
 
 
 def now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
 
 
 class Job:
@@ -111,17 +112,24 @@ class Job:
         chain onto captions/face-swap; final.mp4 still wins so an
         overlay can polish an already-exported file.
         """
-        order = ["final.mp4", "swapped.mp4", "captioned.mp4", "cleaned.mp4", "cut.mp4"]
+        order = ["final.mp4", "swapped.mp4", "captioned.mp4", "cleaned.mp4",
+                 "delogo.mp4", "cut.mp4"]
         arts = self.data.get("artifacts", {})
-        overlays = [n for n in arts
-                    if n.startswith("overlay_") and n.endswith(".mp4")]
-        if overlays:
-            def idx(n):
-                try:
-                    return int(n[8:-4])
-                except ValueError:
-                    return 0
-            order.insert(1, max(overlays, key=idx))
+
+        def created(name: str) -> str:
+            return (arts.get(name) or {}).get("created", "")
+
+        # A compositing artifact newer than final.mp4 (an overlay applied to
+        # an export, an intro/outro) supersedes it; an older one is already
+        # inside it.
+        extras = [n for n in arts
+                  if (n.startswith("overlay_") or n in ("intro.mp4", "outro.mp4"))
+                  and n.endswith(".mp4") and self.has(n)]
+        if extras:
+            newest = max(extras, key=created)
+            if not self.has("final.mp4") or created(newest) > created("final.mp4"):
+                return self.apath(newest)
+
         for name in order:
             if self.has(name):
                 return self.apath(name)

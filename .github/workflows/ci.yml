@@ -21,7 +21,15 @@ jobs:
         run: vmill doctor
       - name: tool manifest is valid json
         run: vmill tools --json | python -m json.tool > /dev/null
+      - name: agent manifest is current
+        run: |
+          vmill tools --json > /tmp/tools.json
+          diff -u tools.json /tmp/tools.json
+      - name: README has no engine names
+        run: test "$(grep -icE 'ffmpeg|whisper|facefusion|deepfilter' README.md)" = "0"
       - name: mcp server self-test
         run: vmill mcp --check
       - name: web ui self-test
         run: vmill serve --check
+      - name: hyperframes toolchain check
+        run: vmill hyperframes --check

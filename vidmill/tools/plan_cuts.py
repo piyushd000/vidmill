@@ -28,6 +28,8 @@ def add_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--pad", type=float, default=0.15, help="seconds kept around each speech block")
     p.add_argument("--min-keep", type=float, default=0.40, help="drop keep-segments shorter than this")
     p.add_argument("--gap", type=float, default=0.35, help="word/silence gap that counts as a pause")
+    p.add_argument("--no-silence", action="store_true",
+                   help="keep pauses; other cut sources still apply")
     p.add_argument("--freeze", action="store_true",
                    help="also remove still/no-movement video segments (freezedetect)")
     p.add_argument("--freeze-db", type=float, default=-60.0, help="freezedetect noise level")
@@ -48,17 +50,19 @@ def run(args: argparse.Namespace) -> None:
     info = util.probe_info(src)
     duration = info["duration"]
 
-    silences = detect_silences(j, src, duration, args)
+    detected = detect_silences(j, src, duration, args)
+    silences = [] if args.no_silence else detected
     if args.freeze:
         freezes = ff_freezes(src, args.freeze_db, args.freeze_min, duration)
         if args.freeze_quiet_only and j.has("transcript.json"):
-            gaps = set(silences)
-            freezes = intersect(freezes, sorted(gaps))
+            freezes = intersect(freezes, sorted(detected))
             print(f"freezedetect: keeping {len(freezes)} still-but-quiet segment(s) "
                   f"(speech-bearing freezes preserved)")
         if freezes:
             print(f"freezedetect: {len(freezes)} still segment(s) marked for removal")
         silences = merge(silences + freezes)
+    if args.no_silence:
+        print("plan: pauses kept (--no-silence)")
     speech = complement(silences, duration)
 
     keeps = merge([(max(0.0, s - args.pad), min(duration, e + args.pad)) for s, e in speech])
