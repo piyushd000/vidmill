@@ -64,6 +64,8 @@ your computer, and vidmill is free software that will stay free.
   styling, automatically re-timed after cuts
 - **Neural face swap** — replace or restyle the face in your footage
   from a single reference image
+- **B-roll & overlays** — logos, watermarks and picture-in-picture or
+  full-frame B-roll, positioned and timed from the command line
 - **No-copyright music & SFX** — a built-in, verified, commercial-safe
   catalog: list, download, and mix without leaving the terminal
 - **Delivery presets** — YouTube-safe H.264, compact HEVC, 1080×1920
@@ -205,6 +207,33 @@ need a credit in your video description; CC0 and public-domain tracks
 need nothing). An agent can list the catalog, pick a mood, download and
 mix — three commands, no third-party service.
 
+## B-roll, logos & watermarks
+
+```bash
+# logo / watermark: top-right, 15% width, fade in and out
+vmill overlay --job myedit --image logo.png --position top-right \
+              --scale 0.15 --at 0 --to 10 --fade 0.4
+
+# B-roll as picture-in-picture in a time window
+vmill overlay --job myedit --video broll.mp4 --mode pip --at 5 --to 11
+
+# B-roll replaces the full frame (main audio stays underneath)
+vmill overlay --job myedit --video broll.mp4 --mode cutaway --at 5 --to 11
+```
+
+Positions are `top-left`, `top-right`, `bottom-left`, `bottom-right`,
+`center`, or a raw `X:Y` expression. Every pass writes `overlay_1.mp4`,
+`overlay_2.mp4`, … and becomes the current video, so overlays stack and
+captions/export chain on top. `--spec overlays.json` applies a whole
+list in one run:
+
+```json
+{"overlays": [
+  {"image": "logo.png", "position": "top-right", "scale": 0.15, "at": 0},
+  {"video": "broll.mp4", "mode": "cutaway", "at": 5, "to": 9}
+]}
+```
+
 ## The tools
 
 | Command | What it does |
@@ -218,6 +247,7 @@ mix — three commands, no third-party service.
 | `vmill captions` | Burn word-synced captions |
 | `vmill face` | Neural face swap from a reference photo |
 | `vmill music` | Curated no-copyright music & SFX: list, download, mix |
+| `vmill overlay` | Logos, watermarks and B-roll (pip or full-frame cutaway) |
 | `vmill export` | Delivery presets: `final`, `hevc`, `shorts`, `yt` |
 | `vmill pipeline` | Run the whole chain, resumable |
 | `vmill status` | Inspect a job's artifacts and history |
@@ -249,7 +279,7 @@ them, or hand them to an agent.
 
 - [x] Fully automatic edit mode (`vmill auto`) with an optional single AI checkpoint
 - [x] Built-in no-copyright music & sound effects catalog (`vmill music`)
-- [ ] B-roll and image overlay tools
+- [x] B-roll and image overlay tools (`vmill overlay`)
 - [ ] Agent-native interface (MCP server over the same tools)
 - [ ] Web UI on top of the job model
 - [ ] Automatic GPU detection and acceleration profiles

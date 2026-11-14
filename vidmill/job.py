@@ -105,8 +105,23 @@ class Job:
         self.save()
 
     def current_video(self) -> Path:
-        """Most recent video artifact = the tool chain's current result."""
+        """Most recent video artifact = the tool chain's current result.
+
+        Overlays (overlay_N.mp4) sit just above the edit chain so they
+        chain onto captions/face-swap; final.mp4 still wins so an
+        overlay can polish an already-exported file.
+        """
         order = ["final.mp4", "swapped.mp4", "captioned.mp4", "cleaned.mp4", "cut.mp4"]
+        arts = self.data.get("artifacts", {})
+        overlays = [n for n in arts
+                    if n.startswith("overlay_") and n.endswith(".mp4")]
+        if overlays:
+            def idx(n):
+                try:
+                    return int(n[8:-4])
+                except ValueError:
+                    return 0
+            order.insert(1, max(overlays, key=idx))
         for name in order:
             if self.has(name):
                 return self.apath(name)
