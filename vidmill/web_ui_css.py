@@ -419,6 +419,28 @@ video#monitor{display:block;max-width:100%;max-height:100%;width:auto;height:aut
   .skills-editor{min-height:300px}
 }
 
+/* vision panel */
+.vision-tools{display:flex;align-items:center;gap:6px;padding:0 10px 6px}
+.vision-model{display:flex;align-items:center;gap:4px;font-size:9.5px;color:var(--dim);
+  cursor:pointer;user-select:none;white-space:nowrap}
+.vision-model input{accent-color:var(--acc);width:12px;height:12px}
+.vision-foot{gap:6px}
+.vres{display:flex;flex-direction:column;gap:5px;padding:0 10px 10px}
+.vrow{display:flex;gap:8px;align-items:center;border:1px solid var(--line);
+  background:var(--panel2);border-radius:8px;padding:5px 7px;cursor:pointer;
+  transition:border-color .12s,transform .12s}
+.vrow:hover{border-color:#3b475a;transform:translateY(-1px)}
+.vrow img{width:76px;height:44px;object-fit:cover;border-radius:5px;background:#000;flex:none}
+.vrow img.noph{opacity:.35}
+.vmeta{min-width:0;text-align:left}
+.vtop{display:flex;gap:6px;align-items:baseline;font-size:11px}
+.vtop b{color:var(--fg)}
+.vscore{font-size:9.5px;color:var(--dim2)}
+.vtext{font-size:10px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vtags{font-size:9.5px;color:var(--dim2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vhead{font-size:10.5px;color:var(--dim);padding:2px 2px 0}
+.vrun{font-size:10.5px;color:var(--dim);padding:6px 2px}
+
 /* responsive */
 @media (max-width:1240px){.layout{grid-template-columns:250px minmax(0,1fr) 300px}
   .assets{grid-template-columns:1fr 1fr}.asset .aname{font-size:10px}}

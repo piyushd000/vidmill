@@ -196,6 +196,31 @@
    "engine": "vidmill local engines (overlay compositing)"
   },
   {
+   "name": "vision",
+   "cmd": "vmill vision check|scenes|index|search|tag|thumbnail|broll [--job <dir>] [--semantic auto|off|require]",
+   "purpose": "Local visual understanding: scene cuts, a searchable frame index, zero-shot tags, smart thumbnails and transcript-to-B-roll matching. The free path uses colour, transcript and filename heuristics; an optional local image-text model adds semantic search.",
+   "inputs": {
+    "action": "check|scenes|index|search|tag|thumbnail|broll",
+    "query": "search text or thumbnail brief",
+    "--semantic": "auto (default), off or require",
+    "--model": "optional local image-text checkpoint",
+    "--threshold/--min-scene": "scene cut sensitivity",
+    "--max-frames/--interval": "how densely to index",
+    "--at": "thumbnail or tag timestamp",
+    "--library": "extra folder of images/videos for B-roll",
+    "--extract": "B-roll: cut clips and write an overlay spec"
+   },
+   "outputs": [
+    "vision/scenes.json",
+    "vision/index.json",
+    "vision/embeddings.json",
+    "vision/assets/thumbnail.jpg",
+    "vision/broll.json",
+    "vision/assets/overlays.json"
+   ],
+   "engine": "vidmill vision (local frame analysis + optional image-text model)"
+  },
+  {
    "name": "hyperframes",
    "cmd": "vmill hyperframes --job <dir> (--project <dir> | --clip <mp4>) [--where intro|outro|render] [--quality draft|looks|delivery]",
    "purpose": "Render a HyperFrames HTML composition and place it as an intro/outro, or render it on its own. Requires Node.js 22+; HyperFrames is fetched on demand through npx.",

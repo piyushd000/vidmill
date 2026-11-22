@@ -49,6 +49,7 @@ DEFAULT_OPTS = {"silences": True, "still": True, "mistakes": True,
 
 RUNS: dict[str, dict] = {}
 AI_RUNS: dict[str, dict] = {}
+VISION_RUNS: dict[str, dict] = {}
 OPTS: dict[str, dict] = {}
 RUNS_LOCK = threading.Lock()
 ROOT: Path = Path.home() / "vmill-jobs"
@@ -767,12 +768,158 @@ def _start_ai(name: str, prompt: str, skill_names=None) -> None:
 def _cancel(name: str) -> bool:
     cancelled = False
     with RUNS_LOCK:
-        for runs in (RUNS, AI_RUNS):
+        for runs in (RUNS, AI_RUNS, VISION_RUNS):
             run = runs.get(name)
             if _active(run):
                 _kill(run["proc"])
                 cancelled = True
     return cancelled
+
+
+def _vision_file(jdir: Path, filename: str) -> Path:
+    """Serve an indexed frame or thumbnail; nothing else inside vision/."""
+    rel = Path(filename)
+    if (rel.is_absolute() or ".." in rel.parts or not rel.parts
+            or rel.parts[0] != "vision"
+            or len(rel.parts) < 3 or rel.parts[1] not in ("frames", "assets")
+            or rel.suffix.lower() not in IMAGE_EXT):
+        raise FileNotFoundError(filename)
+    path = (jdir / rel).resolve()
+    if jdir.resolve() not in path.parents or not path.is_file():
+        raise FileNotFoundError(filename)
+    return path
+
+
+def _vision_result(name: str) -> dict | None:
+    """The last --json object a vision run printed, if any.
+
+    The tool prints one indented JSON object, so the payload we want is
+    the brace that starts a line and spans to the end of the log.
+    """
+    text = _log_tail(name, ".vision.log", limit=200000)
+    dec = json.JSONDecoder()
+    starts = [i for i, ch in enumerate(text) if ch == "{"
+              and (i == 0 or text[i - 1] == "\n")]
+    for i in reversed(starts[-8:]):
+        try:
+            obj, end = dec.raw_decode(text, i)
+        except ValueError:
+            continue
+        if isinstance(obj, dict) and text[end:].strip() == "":
+            return obj
+    return None
+
+
+def _vision_state(name: str) -> dict:
+    jdir = _job_dir(name)
+    if not (jdir / "job.json").exists():
+        raise FileNotFoundError(name)
+
+    def read(path: Path) -> dict:
+        try:
+            return util.read_json(path)
+        except Exception:
+            return {}
+
+    index = read(jdir / "vision/index.json")
+    scenes = read(jdir / "vision/scenes.json")
+    broll = read(jdir / "vision/broll.json")
+    thumbnail = read(jdir / "vision/thumbnail.json")
+    with RUNS_LOCK:
+        run = VISION_RUNS.get(name)
+        running = _active(run)
+        if run and not running:
+            _close(run)
+
+    def vurl(p: str | None) -> str | None:
+        if not p:
+            return None
+        return "/vmedia/" + urllib.parse.quote(name) + "/" + urllib.parse.quote(str(p).replace("\\", "/"))
+
+    frames = [{
+        "id": f.get("id"), "time": f.get("time"), "scene": f.get("scene"),
+        "tags": (f.get("tags") or [])[:6],
+        "url": vurl(f.get("file")),
+    } for f in index.get("frames", [])]
+    scenes_list = [{"index": s.get("index"), "start": s.get("start"),
+                    "end": s.get("end"), "duration": s.get("duration")}
+                   for s in scenes.get("scenes", [])]
+    spec = "vision/assets/overlays.json" if (jdir / "vision/assets/overlays.json").exists() else None
+    return {
+        "name": name,
+        "indexed": bool(index),
+        "frames": frames,
+        "frame_count": len(frames),
+        "scenes": scenes_list,
+        "scene_count": len(scenes_list),
+        "tags": index.get("tags") or {},
+        "backend": index.get("backend"),
+        "thumbnail": thumbnail or None,
+        "thumb_url": vurl("vision/assets/thumbnail.jpg") if thumbnail else None,
+        "broll": {
+            "count": len(broll.get("suggestions", [])),
+            "suggestions": broll.get("suggestions", [])[:12],
+            "spec": spec,
+        },
+        "has_transcript": (jdir / "transcript.json").exists(),
+        "running": running,
+        "log": _log_tail(name, ".vision.log"),
+        "result": _vision_result(name) if run and not running else None,
+    }
+
+
+def _start_vision(name: str, body: dict) -> None:
+    jdir = _job_dir(name)
+    if not (jdir / "job.json").exists():
+        raise FileNotFoundError(name)
+    body = body or {}
+    action = str(body.get("action") or "").strip().lower()
+    if action not in ("scenes", "index", "search", "thumbnail", "broll"):
+        raise ValueError("vision action must be scenes, index, search, thumbnail or broll")
+    argv = [sys.executable, "-u", "-m", "vidmill", "vision", action,
+            "--job", str(jdir), "--json"]
+    if action == "index":
+        argv += ["--max-frames", str(max(10, min(int(body.get("max_frames") or 120), 400)))]
+        argv += ["--semantic", str(body.get("semantic") or "off")]
+        if body.get("force"):
+            argv.append("--force")
+    elif action == "scenes":
+        if body.get("force"):
+            argv.append("--force")
+    elif action == "search":
+        q = str(body.get("query") or "").strip()
+        if not q:
+            raise ValueError("type what to search for")
+        argv += [q, "--top", str(max(1, min(int(body.get("top") or 12), 50))),
+                 "--semantic", str(body.get("semantic") or "auto")]
+    elif action == "thumbnail":
+        q = str(body.get("query") or "").strip()
+        if q:
+            argv.append(q)
+        if body.get("at") is not None:
+            argv += ["--at", str(body.get("at"))]
+        argv += ["--semantic", str(body.get("semantic") or "auto")]
+    elif action == "broll":
+        argv += ["--extract", "--max", str(max(1, min(int(body.get("max") or 12), 40))),
+                 "--semantic", str(body.get("semantic") or "auto")]
+        if body.get("library"):
+            argv += ["--library", str(body.get("library"))]
+    with RUNS_LOCK:
+        if _active(RUNS.get(name)):
+            raise RuntimeError("the automatic edit is still running")
+        if _active(AI_RUNS.get(name)):
+            raise RuntimeError("the AI editor is busy with this job")
+        if _active(VISION_RUNS.get(name)):
+            raise RuntimeError("a vision run is already active")
+        log = jdir / ".vision.log"
+        fh = open(log, "wb")
+        try:
+            proc = subprocess.Popen(argv, stdout=fh, stderr=subprocess.STDOUT,
+                                    stdin=subprocess.DEVNULL, start_new_session=True)
+        except Exception:
+            fh.close()
+            raise
+        VISION_RUNS[name] = {"proc": proc, "log": log, "fh": fh, "closed": False}
 
 
 def _create_from_path(name: str, video_path: str) -> str:
@@ -874,10 +1021,14 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(200, {"running": running, "text": _ai_text(name)})
                 if len(parts) == 4 and parts[3] == "assets":
                     return self._json(200, _assets(name))
+                if len(parts) == 4 and parts[3] == "vision":
+                    return self._json(200, _vision_state(name))
                 if len(parts) == 4 and parts[3] == "timeline":
                     return self._json(200, _timeline(name))
             if parts[0] == "media" and len(parts) == 3:
                 return self._media(parts[1], parts[2])
+            if parts[0] == "vmedia" and len(parts) == 3:
+                return self._vmedia(parts[1], urllib.parse.unquote(parts[2]))
             if parts[0] == "thumb" and len(parts) == 3:
                 return self._thumb(parts[1], parts[2])
             if parts[0] == "waveform" and len(parts) == 3:
@@ -912,6 +1063,9 @@ class Handler(BaseHTTPRequestHandler):
                 _job_dir(name)  # validate
                 if action == "run":
                     _start_run(name, self._body_json())
+                    return self._json(200, {"ok": True})
+                if action == "vision":
+                    _start_vision(name, self._body_json())
                     return self._json(200, {"ok": True})
                 if action == "ai":
                     body = self._body_json() or {}
@@ -1027,6 +1181,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._err(404, "not found")
         self._send_file(path)
 
+    def _vmedia(self, name: str, filename: str) -> None:
+        jdir = _job_dir(name)
+        try:
+            path = _vision_file(jdir, filename)
+        except FileNotFoundError:
+            return self._err(404, "not found")
+        self._send_file(path, ranged=False)
+
     def _thumb(self, name: str, filename: str) -> None:
         jdir = _job_dir(name)
         try:
@@ -1117,7 +1279,8 @@ def _check() -> None:
             assert r.status == 200 and "<!doctype html" in body.lower(), "bad index"
             assert "Remove watermark" in body and "Ask AI" in body, "ui sections missing"
             for part in ("Media bin", "Timeline", "AI editor", "assetGrid", "tlInner",
-                         "modalSkills", "skillList", "btnSkills"):
+                         "modalSkills", "skillList", "btnSkills", "visionList",
+                         "btnVisionIndex", "visionQuery"):
                 assert part in body, f"studio ui missing {part}"
         with urllib.request.urlopen(base + "/api/jobs", timeout=10) as r:
             jobs = json.load(r)
@@ -1156,8 +1319,39 @@ def _check() -> None:
             raise AssertionError("path traversal not blocked")
         except urllib.error.HTTPError as e:
             assert e.code in (400, 404), e.code
+
+        # vision api: scene detection on a generated fixture, end to end
+        fixture = ROOT / "selftest-fixture.mp4"
+        util.run([util.FFMPEG, "-hide_banner", "-loglevel", "error", "-y", "-nostdin",
+                  "-f", "lavfi", "-i", "color=c=0xFF0000:s=256x144:d=2:r=24",
+                  "-f", "lavfi", "-i", "color=c=0x0000FF:s=256x144:d=2:r=24",
+                  "-filter_complex", "[0:v][1:v]concat=n=2:v=1:a=0,format=yuv420p[v]",
+                  "-map", "[v]", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                  "-nostdin", str(fixture)], check=True, quiet=True)
+        made = api("/api/jobs", "POST", {"path": str(fixture), "name": "selftest-vision"})
+        vname = made["name"]
+        api("/api/jobs/" + urllib.parse.quote(vname) + "/vision", "POST", {"action": "scenes"})
+        st = {}
+        deadline = time.time() + 90
+        while True:
+            st = api("/api/jobs/" + urllib.parse.quote(vname) + "/vision")
+            if not st.get("running"):
+                break
+            if time.time() > deadline:
+                raise AssertionError("vision self-test timed out")
+            time.sleep(0.4)
+        assert st.get("scene_count", 0) >= 2, st
+        assert st.get("scenes"), st
+        assert not st.get("indexed"), st
+        try:
+            urllib.request.urlopen(base + "/vmedia/" + urllib.parse.quote(vname) +
+                                   "/vision/frames/nope.jpg", timeout=5)
+            raise AssertionError("missing vision media still served")
+        except urllib.error.HTTPError as e:
+            assert e.code == 404, e.code
+
         print(f"web ui self-test OK: HTTP 200, {len(body)} bytes, "
-              f"api + skills + sandbox checks passed")
+              f"api + skills + sandbox + vision checks passed")
     finally:
         httpd.shutdown()
         httpd.server_close()

@@ -75,6 +75,24 @@ BODY = r"""
           <button class="btn sm" id="btnRestart"><svg class="icon"><use href="#i-gear"/></svg>Re-run</button></div>
       </section>
 
+      <section class="panel vision">
+        <div class="ph">Vision <span class="count" id="visionCount">0</span><span class="grow"></span>
+          <span class="tag" id="visionBadge">—</span></div>
+        <div class="bin-tools vision-tools">
+          <div class="search"><svg class="icon"><use href="#i-search"/></svg>
+            <input id="visionQuery" placeholder="Search what's on screen" autocomplete="off"></div>
+          <label class="vision-model"><input type="checkbox" id="visionModel">model</label>
+        </div>
+        <div class="panel-body"><div class="vres" id="visionList"></div>
+          <div class="bin-empty hidden" id="visionEmpty">Index the footage to see scenes and search what's on screen.</div></div>
+        <div class="ins-foot vision-foot">
+          <button class="btn sm" id="btnVisionScenes"><svg class="icon"><use href="#i-play"/></svg>Scenes</button>
+          <button class="btn sm" id="btnVisionIndex"><svg class="icon"><use href="#i-import"/></svg>Index</button>
+          <button class="btn sm" id="btnVisionThumb"><svg class="icon"><use href="#i-fit"/></svg>Thumbnail</button>
+          <button class="btn sm" id="btnVisionBroll"><svg class="icon"><use href="#i-film"/></svg>B-roll</button>
+        </div>
+      </section>
+
       <section class="panel projects">
         <div class="ph">Projects <span class="count" id="projectCount">0</span><span class="grow"></span>
           <button class="phbtn" id="btnNewProject" title="New project"><svg class="icon"><use href="#i-plus"/></svg></button></div>

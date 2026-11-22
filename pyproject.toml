@@ -32,3 +32,12 @@ include = ["vidmill*"]
 
 [tool.setuptools.package-data]
 vidmill = ["assets/*.json", "skill_data/*/SKILL.md"]
+
+[project.optional-dependencies]
+vision = [
+  "numpy>=1.24",
+  "pillow>=9.0",
+  "torch>=2.1",
+  "transformers>=4.40",
+  "sentencepiece>=0.2",
+]

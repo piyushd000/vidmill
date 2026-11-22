@@ -45,6 +45,7 @@ interviews — locally, with no account and no upload.
 - **Watermark removal** — conservative auto-detection in the corners, or an exact pixel region
 - **No-copyright music & SFX** — verified commercial-safe catalog; list, download, mix
 - **B-roll & overlays** — logos, watermarks, picture-in-picture and full-frame cutaways
+- **Semantic vision** — scene cuts, a searchable frame index, zero-shot tags, smart thumbnails and transcript-to-B-roll matching; heuristics are free and a local image-text model is optional
 - **HTML intros & outros** — render a HyperFrames composition and drop it onto the timeline
 - **Face swap** — optional module driven by a single reference photo
 - **Delivery presets** — YouTube H.264, compact HEVC, Shorts 1080×1920, landscape 1920×1080
@@ -61,6 +62,7 @@ Linux or macOS, Python 3.10+:
 git clone https://github.com/piyushd000/vidmill.git
 cd vidmill
 ./install.sh            # core: transcription, editing, export
+./install.sh --vision   # optional: local semantic vision (search, tags, B-roll)
 ./install.sh --extras   # optional: face swap (requires conda)
 
 vmill doctor            # verify the installation
@@ -244,6 +246,36 @@ overlays.json` applies a list in one run.
 To remove an existing watermark rather than add one, use `vmill delogo`
 (auto-detects text overlays in the corners, or pass `--region X:Y:W:H`).
 
+### Semantic vision
+
+`vmill vision` gives the editor a sense of what is on screen:
+
+```bash
+vmill vision scenes --job myedit            # cut list -> vision/scenes.json
+vmill vision index  --job myedit            # searchable frames + tags
+vmill vision search --job myedit "hands on a keyboard"
+vmill vision tag    --job myedit            # what is in each scene
+vmill vision thumbnail --job myedit "product close-up"
+vmill vision broll  --job myedit --extract  # match B-roll to the spoken lines
+```
+
+- **Scene cuts** come from low-resolution frame signatures, so they are
+  fast and free on any machine.
+- **The index** samples frames at scene midpoints and describes each one
+  with colour, sharpness and nearby transcript words.
+- **Search** ranks frames against what you type — or, with the optional
+  local image-text model installed, against its understanding of the
+  picture.
+- **Thumbnails** pick the sharpest, best-lit frame, or the one that best
+  matches a description.
+- **B-roll matching** proposes cutaways for each spoken line and writes
+  `vision/assets/overlays.json`, which `vmill overlay --spec` applies.
+
+The model is downloaded once, stays on your machine and is never used
+for the free path — everything above works without it. `vmill vision
+check` reports what is ready, and `vmill doctor` shows whether the
+optional model is installed.
+
 ### Face swap
 
 ```bash
@@ -293,6 +325,7 @@ drift from the product.
 | `vmill skills` | List, read, add, edit, reset and remove AI editing skills |
 | `vmill music` | No-copyright music & SFX: list, download, mix |
 | `vmill overlay` | Logos, watermarks and B-roll (pip or full-frame cutaway) |
+| `vmill vision` | Scene cuts, visual search, tags, thumbnails, B-roll matching |
 | `vmill hyperframes` | Render HTML intros/outros and place them on the timeline |
 | `vmill export` | Delivery presets: `final`, `hevc`, `shorts`, `yt` |
 | `vmill pipeline` | Run the whole chain, resumable |
@@ -321,7 +354,8 @@ or hand them to an agent.
 - Linux or macOS
 - Python 3.10+
 - Node.js 22+ only for HTML intros/outros (`vmill hyperframes`) — optional
-- ~5 GB free disk for optional model downloads (first use only)
+- ~5 GB free disk for optional model downloads (first use only); the
+  semantic vision model is about 600 MB and downloads on first index
 - A CPU is enough. A GPU accelerates transcription and delivery
   exports when a working hardware encoder is present — both are
   detected automatically, with a CPU fallback.

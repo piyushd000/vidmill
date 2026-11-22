@@ -180,7 +180,8 @@ async function openJob(name){
   name=String(name||"").trim();if(!name)return;
   if(S.aiTimer){clearTimeout(S.aiTimer);S.aiTimer=null}
   S.job=name;S.preview=null;S.optsLoaded=false;S.lastSrc="";S.artSig="";S.timeline=null;
-  S.aiPending=false;S.status=null;S.assets=[];
+  S.aiPending=false;S.status=null;S.assets=[];S.vision=null;
+  if(S.visionTimer){clearInterval(S.visionTimer);S.visionTimer=null}
   try{localStorage.setItem("vmill.last",name)}catch(e){}
   try{history.replaceState(null,"","#"+enc(name))}catch(e){}
   $("#jobTitle").textContent=name;showScreen();$("#previewFlag").classList.add("hidden");
@@ -190,7 +191,7 @@ async function openJob(name){
   $("#tcCur").textContent="00:00:00:00";$("#tcTot").textContent="00:00:00:00";
   $("#progress").value=0;$("#playhead").classList.add("hidden");clearExport();
   setChrome("run","loading");loadChat();renderChat();renderTimeline();renderAssets();
-  try{await Promise.all([poll(),refreshAssets(),loadTimeline()])}catch(e){}
+  try{await Promise.all([poll(),refreshAssets(),loadTimeline(),refreshVision()])}catch(e){}
   if(S.timer)clearInterval(S.timer);
   S.timer=setInterval(poll,1500);
   if(S.status&&S.status.ai_running)pollAI();
@@ -617,6 +618,122 @@ function bindAssets(){
   $("#assetFile").addEventListener("change",function(){uploadAssets(this.files)});
 }
 
+/* --------------------------------------------------------------- vision */
+function vURL(file){
+  if(!file)return "";
+  var p=String(file).replace(/\\/g,"/");
+  return "/vmedia/"+enc(S.job)+"/"+enc(p);
+}
+function visionEmptyMsg(){
+  var v=S.vision;
+  if(!S.job)return "Open a project to analyse its footage.";
+  if(!v)return "Vision is ready to run.";
+  if(v.running)return "Working…";
+  if(!v.scene_count)return "Run Scenes to find the cuts, then Index the footage.";
+  if(!v.indexed)return "Run Index to make the footage searchable.";
+  return "";
+}
+function vrow(o,thumbUrl){
+  var b=document.createElement("button");b.className="vrow";
+  var im=document.createElement("img");
+  if(thumbUrl){im.src=thumbUrl;im.loading="lazy"}else{im.className="noph"}
+  b.appendChild(im);
+  var meta=document.createElement("div");meta.className="vmeta";
+  var top=document.createElement("div");top.className="vtop";
+  var t=document.createElement("b");t.textContent=fmtClock(o.time);
+  top.appendChild(t);
+  if(o.score!=null){var sc=document.createElement("span");sc.className="vscore";
+    sc.textContent="· "+Number(o.score).toFixed(3);top.appendChild(sc)}
+  meta.appendChild(top);
+  var tags=(o.tags||[]);
+  if(o.text)meta.appendChild(Object.assign(document.createElement("div"),
+    {className:"vtext",textContent:"“"+String(o.text).slice(0,110)+"”"}));
+  if(tags.length)meta.appendChild(Object.assign(document.createElement("div"),
+    {className:"vtags",textContent:tags.slice(0,5).join(" · ")}));
+  b.appendChild(meta);
+  b.onclick=function(){
+    if(o.time!=null&&S.timeline)seekSequence(o.time);
+    else if(o.time!=null)toast("Open the project timeline to jump","warn");
+  };
+  return b;
+}
+function renderVision(){
+  var v=S.vision,list=$("#visionList"),empty=$("#visionEmpty");
+  var badge=$("#visionBadge"),count=$("#visionCount");
+  if(!v){list.innerHTML="";empty.classList.remove("hidden");
+    empty.textContent=visionEmptyMsg();badge.textContent="—";count.textContent="0";return}
+  badge.textContent=v.running?"RUNNING":(v.indexed?(v.backend&&v.backend.model?"SEMANTIC":"INDEXED"):"FREE");
+  count.textContent=v.scene_count||0;
+  if(v.running){list.innerHTML='<div class="vrun">vision is working…</div>';
+    empty.classList.add("hidden");return}
+  var rows=[];
+  var res=v.result;
+  if(res&&res.results&&res.results.length){
+    var byId={};(v.frames||[]).forEach(function(f){byId[f.id]=f});
+    rows.push(Object.assign(document.createElement("div"),
+      {className:"vhead",textContent:'search: "'+(res.query||"")+'"'}));
+    res.results.forEach(function(r){
+      var f=byId[r.id]||{};
+      rows.push(vrow({time:r.time,score:r.score,tags:r.tags},vURL(f.url||r.file)));
+    });
+  }else if(res&&res.file){
+    rows.push(Object.assign(document.createElement("div"),
+      {className:"vhead",textContent:'thumbnail @ '+fmtClock(res.time)}));
+    rows.push(vrow({time:res.time,score:res.score,tags:res.tags},vURL(res.file)));
+  }else if(res&&res.suggestions&&res.suggestions.length){
+    rows.push(Object.assign(document.createElement("div"),
+      {className:"vhead",textContent:"B-roll: "+res.suggestions.length+" match"+
+        (res.suggestions.length>1?"es":"")+" · ask the AI to apply the spec"}));
+    res.suggestions.forEach(function(sg){
+      var seg=sg.segment||{},cand=sg.candidate||{};
+      rows.push(vrow({time:seg.start,score:sg.score,tags:[cand.kind+" · "+(cand.path||"").split("/").pop()]},vURL(cand.preview)));
+    });
+  }else if((v.frames||[]).length){
+    v.frames.forEach(function(f){rows.push(vrow({time:f.time,tags:f.tags},f.url))});
+  }
+  list.innerHTML="";
+  rows.forEach(function(r){list.appendChild(r)});
+  var msg=visionEmptyMsg();
+  if(!rows.length&&msg){empty.textContent=msg;empty.classList.remove("hidden")}
+  else empty.classList.add("hidden");
+}
+async function refreshVision(){
+  if(!S.job){S.vision=null;renderVision();return}
+  try{S.vision=await api("/api/jobs/"+enc(S.job)+"/vision")}catch(e){S.vision=null}
+  renderVision();
+  if(S.vision&&S.vision.running&&!S.visionTimer){
+    S.visionTimer=setInterval(function(){
+      if(!S.vision||!S.vision.running){clearInterval(S.visionTimer);S.visionTimer=null}
+      refreshVision();
+    },1200);
+  }
+}
+async function visionRun(action,extra){
+  if(!S.job){toast("Open a project first","warn");return}
+  var body=Object.assign({action:action},extra||{});
+  if($("#visionModel").checked)body.semantic="auto";
+  try{await api("/api/jobs/"+enc(S.job)+"/vision",{method:"POST",
+    headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})}
+  catch(e){toast(String(e.message||e),"err");return}
+  toast("vision "+action+" started","ok");
+  refreshVision();
+}
+function bindVision(){
+  $("#btnVisionScenes").onclick=function(){visionRun("scenes",{force:false})};
+  $("#btnVisionIndex").onclick=function(){visionRun("index",{max_frames:120,force:false})};
+  $("#btnVisionThumb").onclick=function(){
+    var q=$("#visionQuery").value.trim();
+    visionRun("thumbnail",q?{query:q}:{});
+  };
+  $("#btnVisionBroll").onclick=function(){visionRun("broll",{})};
+  $("#visionQuery").addEventListener("keydown",function(e){
+    if(e.key==="Enter"){
+      var q=this.value.trim();
+      if(q)visionRun("search",{query:q,top:12});
+    }
+  });
+}
+
 /* ------------------------------------------------------------------ init */
 function bindKeys(){
   document.addEventListener("keydown",function(e){
@@ -632,7 +749,7 @@ function bindKeys(){
   });
 }
 function boot(){
-  bindMonitor();bindTimeline();bindAI();bindSkills();bindModals();bindAssets();bindKeys();
+  bindMonitor();bindTimeline();bindAI();bindSkills();bindModals();bindAssets();bindKeys();bindVision();
   renderAISkills();refreshSkills();
   var act=$("#activity");
   try{

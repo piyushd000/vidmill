@@ -25,11 +25,32 @@ python3 - <<'EOF' || { echo "python >= 3.10 is required"; exit 1; }
 import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)
 EOF
 
+WANT_EXTRAS=0
+WANT_VISION=0
+for arg in "$@"; do
+  case "$arg" in
+    --extras) WANT_EXTRAS=1 ;;
+    --vision) WANT_VISION=1 ;;
+    *) echo "usage: install.sh [--extras] [--vision]"; exit 1 ;;
+  esac
+done
+
 say "installing core (faster-whisper + vmill CLI)"
 python3 -m pip install -q faster-whisper
 python3 -m pip install -q -e .
 
-if [[ "${1:-}" == "--extras" ]]; then
+if [[ "$WANT_VISION" == "1" ]]; then
+  say "optional semantic vision (local image-text model)"
+  if [[ "$OSTYPE" == darwin* ]]; then
+    python3 -m pip install -q 'vidmill[vision]'
+  else
+    # keep the CPU-only build on Linux; the default wheel pulls GPU libraries
+    python3 -m pip install -q --index-url https://download.pytorch.org/whl/cpu torch
+    python3 -m pip install -q 'vidmill[vision]'
+  fi
+fi
+
+if [[ "$WANT_EXTRAS" == "1" ]]; then
   say "optional engines"
   if command -v conda >/dev/null; then
     if ! conda env list | grep -q '^dfnet '; then

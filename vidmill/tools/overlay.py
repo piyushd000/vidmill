@@ -208,12 +208,10 @@ def _cutaway_pass(j, src: Path, spec: dict, info: dict, out: Path) -> None:
             parts.append(f"[mt]trim=start={to:.3f},setpts=PTS-STARTPTS[c2]")
             pieces.append("[c0]")
         elif pre:
-            parts.append("[m]split=2[mp][mb]")
-            parts.append(f"[mp]trim=start=0:end={at:.3f},setpts=PTS-STARTPTS[c0]")
+            parts.append(f"[m]trim=start=0:end={at:.3f},setpts=PTS-STARTPTS[c0]")
             pieces.append("[c0]")
         elif tail:
-            parts.append("[m]split=2[mb][mt]")
-            parts.append(f"[mt]trim=start={to:.3f},setpts=PTS-STARTPTS[c2]")
+            parts.append(f"[m]trim=start={to:.3f},setpts=PTS-STARTPTS[c2]")
         parts.append(broll_piece)
         pieces.append("[c1]")
         if tail:

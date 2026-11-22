@@ -120,6 +120,12 @@ def doctor_cmd(a) -> None:
         check("HyperFrames (npx)", False,
               "Node.js 22+ for HTML intros/outros — optional, `vmill hyperframes --check`")
 
+    from . import vision_backend as vision_backend_mod
+    vst = vision_backend_mod.status()
+    check("Semantic vision (optional)", bool(vst.get("available")),
+          (f"{vst.get('model')} — device {vst.get('device')}"
+           if vst.get("available") else f"{vst.get('reason')} — install: pip install 'vidmill[vision]'"))
+
     check("gh CLI", bool(shutil.which("gh")), "for publishing to GitHub (optional)")
 
     gpu = util.gpu_backend()
