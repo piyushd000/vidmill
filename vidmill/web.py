@@ -834,7 +834,8 @@ def _vision_state(name: str) -> dict:
     def vurl(p: str | None) -> str | None:
         if not p:
             return None
-        return "/vmedia/" + urllib.parse.quote(name) + "/" + urllib.parse.quote(str(p).replace("\\", "/"))
+        return ("/vmedia/" + urllib.parse.quote(name, safe="")
+                + "/" + urllib.parse.quote(str(p).replace("\\", "/"), safe=""))
 
     frames = [{
         "id": f.get("id"), "time": f.get("time"), "scene": f.get("scene"),

@@ -674,7 +674,7 @@ function renderVision(){
       {className:"vhead",textContent:'search: "'+(res.query||"")+'"'}));
     res.results.forEach(function(r){
       var f=byId[r.id]||{};
-      rows.push(vrow({time:r.time,score:r.score,tags:r.tags},vURL(f.url||r.file)));
+      rows.push(vrow({time:r.time,score:r.score,tags:r.tags},f.url||vURL(r.file)));
     });
   }else if(res&&res.file){
     rows.push(Object.assign(document.createElement("div"),
