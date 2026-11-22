@@ -9,7 +9,7 @@ import sys
 
 from . import APP_NAME, ToolError, __version__
 from . import job as jobmod
-from . import mcp_server, util, web
+from . import mcp_server, skill_cli, util, web
 from .registry import TOOLS, manifest
 from .tools import REGISTRY
 
@@ -41,6 +41,10 @@ def main(argv: list[str] | None = None) -> None:
     wp = sub.add_parser("serve", help=web.PURPOSE)
     web.add_args(wp)
     wp.set_defaults(func=web.run)
+
+    kp = sub.add_parser("skills", help=skill_cli.PURPOSE)
+    skill_cli.add_args(kp)
+    kp.set_defaults(func=skill_cli.run)
 
     sp2 = sub.add_parser("status", help="show a job's artifacts and tool history")
     sp2.add_argument("--job", required=True)

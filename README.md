@@ -38,6 +38,7 @@ interviews — locally, with no account and no upload.
 - **Every non-AI edit, automatic** — pauses, still frames, retakes, captions, audio cleanup and watermark removal all run by default
 - **Zero AI bill by default** — the full edit runs locally; an optional single AI checkpoint costs a few cents at most
 - **AI editor on demand** — ask for changes in plain language and the model calls the same tools you do
+- **Editable skills** — bundled Markdown recipes the AI loads on demand, overridable per user or project
 - **Speech-aware cuts** — pauses, still frames and false starts; video and audio always stay in sync
 - **Word-synced captions** — burned in, automatically re-timed after every cut
 - **Studio audio** — neural noise removal plus broadcast-standard loudness
@@ -121,6 +122,41 @@ vmill ai --job myedit --dry-run "..."    # show the request, make no call
 
 Nothing changes without a tool call, every step is recorded in
 `job.json`, and a failed request leaves the job intact.
+
+### Skills — reusable edits the AI can load
+
+vidmill ships with editing skills: short Markdown recipes for common
+workflows such as tight cuts, captions, audio cleanup, logos, music,
+Shorts delivery, B-roll, watermark removal and intros/outros. The AI
+sees each skill's name and description, then loads the full recipe only
+when it is relevant — so prompts stay small and the instructions are
+easy to change.
+
+```bash
+vmill skills list
+vmill skills show tight-cut
+vmill skills add my-house-style --description "My channel's pacing and caption style." --edit
+vmill skills edit tight-cut --from my-tight-cut.md
+vmill skills reset tight-cut          # remove the override, restore bundled
+vmill skills remove my-house-style
+vmill skills check                    # validate every skill file
+```
+
+Skills are plain files:
+
+- **user** — `~/.config/vidmill/skills/<name>/SKILL.md` (or `$VIDMILL_SKILLS_DIR`)
+- **project** — `.vmill/skills/<name>/SKILL.md` in the directory where you run `vmill`
+- **bundled** — ship with vidmill and act as defaults
+
+A project skill overrides a user skill with the same name; a user skill
+overrides the bundled one. The studio's AI panel has a **Skills** button
+to browse, read, edit, create, reset and attach up to four skills to a
+request. `vmill ai --skill tight-cut` preloads a recipe explicitly, and
+`--no-skills` hides the library for that run.
+
+The skills library is part of the agent surface too: MCP clients get
+`skills` (management) and `skill` (load one recipe), and the CLI entry
+appears in `vmill tools --json`.
 
 ### HTML intros & outros
 
@@ -254,6 +290,7 @@ drift from the product.
 | `vmill captions` | Burn word-synced captions |
 | `vmill face` | Neural face swap from a reference photo |
 | `vmill ai` | Natural-language edits through any tool, via your own API key |
+| `vmill skills` | List, read, add, edit, reset and remove AI editing skills |
 | `vmill music` | No-copyright music & SFX: list, download, mix |
 | `vmill overlay` | Logos, watermarks and B-roll (pip or full-frame cutaway) |
 | `vmill hyperframes` | Render HTML intros/outros and place them on the timeline |

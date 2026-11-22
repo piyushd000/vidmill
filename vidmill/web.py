@@ -33,6 +33,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from . import job as jobmod
+from . import skills as skillsmod
 from . import util
 from .web_ui import HTML
 
@@ -210,6 +211,58 @@ def _log_tail(name: str, filename: str = ".run.log", limit: int = 60000) -> str:
 
 def _ai_text(name: str) -> str:
     return _log_tail(name, ".ai.log")
+
+
+# ------------------------------------------------------------------- skills
+
+def _skills_state() -> dict:
+    found, warnings = skillsmod.discover_with_warnings()
+    return {
+        "skills": [skillsmod.summary(s) for s in found],
+        "warnings": warnings,
+        "count": len(found),
+        "dirs": {k: str(v) for k, v in skillsmod.roots().items()},
+    }
+
+
+def _skill_detail(name: str) -> dict:
+    skill = skillsmod.load(name)
+    return {"skill": {**skillsmod.summary(skill), "body": skill.body}}
+
+
+def _skill_create(payload: dict) -> dict:
+    skill = skillsmod.upsert(
+        str(payload.get("name") or ""),
+        str(payload.get("description") or ""),
+        str(payload.get("body") or ""),
+        payload.get("tags") or (),
+        str(payload.get("scope") or "user"),
+    )
+    return _skill_detail(skill.name)
+
+
+def _skill_save(name: str, payload: dict) -> dict:
+    existing = skillsmod.load(name)
+    scope = str(payload.get("scope") or
+                ("project" if existing.source == "project" else "user"))
+    skill = skillsmod.update(
+        name,
+        payload.get("description") if "description" in payload else None,
+        payload.get("body") if "body" in payload else None,
+        payload.get("tags") if "tags" in payload else None,
+        scope,
+    )
+    return _skill_detail(skill.name)
+
+
+def _skill_reset(name: str, payload: dict) -> dict:
+    scope = str(payload.get("scope") or "user")
+    scopes = ("user", "project") if scope == "all" else (skillsmod.clean_scope(scope),)
+    removed = skillsmod.reset(name, scopes)
+    current = skillsmod.find(name)
+    return {"removed": [str(p) for p in removed],
+            "skill": {**skillsmod.summary(current), "body": current.body}
+            if current else None}
 
 
 def _media_kind(filename: str) -> str | None:
@@ -680,13 +733,17 @@ def _start_run(name: str, raw_opts: dict) -> None:
         RUNS[name] = {"proc": proc, "log": log, "fh": fh, "closed": False}
 
 
-def _start_ai(name: str, prompt: str) -> None:
+def _start_ai(name: str, prompt: str, skill_names=None) -> None:
     jdir = _job_dir(name)
     if not (jdir / "job.json").exists():
         raise FileNotFoundError(name)
     prompt = (prompt or "").strip()
     if not prompt:
         raise ValueError("describe the change you want")
+    try:
+        selected = skillsmod.resolve_many(skill_names or [])
+    except FileNotFoundError as e:
+        raise ValueError(str(e)) from e
     if not _has_key():
         raise RuntimeError("AI editing needs VIDMILL_AI_KEY (or OPENAI_API_KEY) "
                            "in the server's environment")
@@ -695,7 +752,10 @@ def _start_ai(name: str, prompt: str) -> None:
             raise RuntimeError("the automatic edit is still running")
         if _active(AI_RUNS.get(name)):
             raise RuntimeError("the AI editor is already working on this job")
-        argv = [sys.executable, "-u", "-m", "vidmill", "ai", "--job", str(jdir), "--", prompt]
+        argv = [sys.executable, "-u", "-m", "vidmill", "ai", "--job", str(jdir)]
+        for skill in selected:
+            argv += ["--skill", skill.name]
+        argv += ["--", prompt]
         log = jdir / ".ai.log"
         fh = open(log, "wb")
         proc = subprocess.Popen(argv, stdout=fh, stderr=subprocess.STDOUT,
@@ -794,6 +854,10 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(body)
                 return
+            if parts == ["api", "skills"]:
+                return self._json(200, _skills_state())
+            if parts[:2] == ["api", "skills"] and len(parts) == 3:
+                return self._json(200, _skill_detail(urllib.parse.unquote(parts[2])))
             if parts == ["api", "jobs"]:
                 return self._json(200, _list_jobs())
             if parts[:2] == ["api", "jobs"] and len(parts) >= 3:
@@ -821,8 +885,8 @@ class Handler(BaseHTTPRequestHandler):
             if parts[0] in ("source", "source_thumb", "source_wave") and len(parts) == 2:
                 return self._source(parts[1], parts[0])
             self._err(404, "not found")
-        except FileNotFoundError:
-            self._err(404, "job not found")
+        except FileNotFoundError as e:
+            self._err(404, str(e) or "not found")
         except ValueError as e:
             self._err(400, str(e))
         except Exception as e:  # noqa: BLE001
@@ -831,6 +895,11 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         parts = [p for p in urllib.parse.urlparse(self.path).path.split("/") if p]
         try:
+            if parts == ["api", "skills"]:
+                return self._json(200, _skill_create(self._body_json()))
+            if parts[:2] == ["api", "skills"] and len(parts) == 4 and parts[3] == "reset":
+                return self._json(200, _skill_reset(
+                    urllib.parse.unquote(parts[2]), self._body_json()))
             if parts == ["api", "jobs"]:
                 body = self._body_json()
                 path = body.get("path")
@@ -845,13 +914,14 @@ class Handler(BaseHTTPRequestHandler):
                     _start_run(name, self._body_json())
                     return self._json(200, {"ok": True})
                 if action == "ai":
-                    _start_ai(name, (self._body_json() or {}).get("prompt", ""))
+                    body = self._body_json() or {}
+                    _start_ai(name, body.get("prompt", ""), body.get("skills") or [])
                     return self._json(200, {"ok": True})
                 if action == "cancel":
                     return self._json(200, {"cancelled": _cancel(name)})
             self._err(404, "not found")
-        except FileNotFoundError:
-            self._err(404, "job not found")
+        except FileNotFoundError as e:
+            self._err(404, str(e) or "not found")
         except ValueError as e:
             self._err(400, str(e))
         except RuntimeError as e:
@@ -865,6 +935,9 @@ class Handler(BaseHTTPRequestHandler):
         q = urllib.parse.parse_qs(parsed.query)
         length = int(self.headers.get("Content-Length") or 0)
         try:
+            if parts[:2] == ["api", "skills"] and len(parts) == 3:
+                return self._json(200, _skill_save(
+                    urllib.parse.unquote(parts[2]), self._body_json()))
             if parsed.path == "/api/upload":
                 if length <= 0:
                     return self._err(400, "empty upload")
@@ -881,8 +954,28 @@ class Handler(BaseHTTPRequestHandler):
                                        self.rfile, length)
                 return self._json(200, {"name": asset})
             self._err(404, "not found")
-        except FileNotFoundError:
-            self._err(404, "job not found")
+        except FileNotFoundError as e:
+            self._err(404, str(e) or "not found")
+        except ValueError as e:
+            self._err(400, str(e))
+        except Exception as e:  # noqa: BLE001
+            self._err(500, f"{type(e).__name__}: {e}")
+
+    def do_DELETE(self) -> None:
+        parsed = urllib.parse.urlparse(self.path)
+        parts = [p for p in parsed.path.split("/") if p]
+        q = urllib.parse.parse_qs(parsed.query)
+        try:
+            if parts[:2] == ["api", "skills"] and len(parts) == 3:
+                name = urllib.parse.unquote(parts[2])
+                scope = (q.get("scope") or ["user"])[0]
+                path = skillsmod.remove(name, scope)
+                return self._json(200, {"removed": str(path),
+                                        "skills": [skillsmod.summary(s)
+                                                   for s in skillsmod.discover()]})
+            self._err(404, "not found")
+        except FileNotFoundError as e:
+            self._err(404, str(e) or "not found")
         except ValueError as e:
             self._err(400, str(e))
         except Exception as e:  # noqa: BLE001
@@ -1002,29 +1095,76 @@ def _check() -> None:
     global ROOT
     import tempfile
     ROOT = Path(tempfile.mkdtemp(prefix="vmill-web-check-"))
+    old_skills = os.environ.get("VIDMILL_SKILLS_DIR")
+    os.environ["VIDMILL_SKILLS_DIR"] = str(ROOT / "skills")
     httpd = _make_server("127.0.0.1", 0)
     port = httpd.server_port
+    base = f"http://127.0.0.1:{port}"
     t = threading.Thread(target=httpd.serve_forever, daemon=True)
     t.start()
+
+    def api(path: str, method: str = "GET", payload=None):
+        data = json.dumps(payload).encode() if payload is not None else None
+        req = urllib.request.Request(
+            base + path, data=data, method=method,
+            headers={"Content-Type": "application/json"} if data else {})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return json.load(r)
+
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=10) as r:
+        with urllib.request.urlopen(base + "/", timeout=10) as r:
             body = r.read().decode()
             assert r.status == 200 and "<!doctype html" in body.lower(), "bad index"
             assert "Remove watermark" in body and "Ask AI" in body, "ui sections missing"
-            for part in ("Media bin", "Timeline", "AI editor", "assetGrid", "tlInner"):
+            for part in ("Media bin", "Timeline", "AI editor", "assetGrid", "tlInner",
+                         "modalSkills", "skillList", "btnSkills"):
                 assert part in body, f"studio ui missing {part}"
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/jobs", timeout=10) as r:
+        with urllib.request.urlopen(base + "/api/jobs", timeout=10) as r:
             jobs = json.load(r)
             assert jobs == [], jobs
+        skills = api("/api/skills")
+        assert skills["count"] >= 9, skills
+        assert any(s["name"] == "tight-cut" for s in skills["skills"]), skills
+        made = api("/api/skills", "POST", {
+            "name": "self-test-skill",
+            "description": "Temporary skill used by the web self-test.",
+            "body": "# Self test\n\nDo not use this skill.",
+            "tags": ["test"],
+            "scope": "user",
+        })
+        assert made["skill"]["source"] == "user", made
+        detail = api("/api/skills/self-test-skill")
+        assert "Self test" in detail["skill"]["body"], detail
+        api("/api/skills/self-test-skill", "PUT", {
+            "description": "Edited temporary skill.",
+            "body": "# Self test\n\nEdited body.",
+        })
+        reset = api("/api/skills/self-test-skill/reset", "POST", {"scope": "user"})
+        assert reset["removed"] and reset["skill"] is None, reset
         try:
-            urllib.request.urlopen(f"http://127.0.0.1:{port}/api/jobs/..%2Fescape", timeout=5)
+            api("/api/skills/self-test-skill")
+            raise AssertionError("removed skill still exists")
+        except urllib.error.HTTPError as e:
+            assert e.code == 404, e.code
+        api("/api/skills", "POST", {
+            "name": "self-test-skill", "description": "Temporary skill.",
+            "body": "# Temporary\n\nDelete me.", "scope": "user"})
+        deleted = api("/api/skills/self-test-skill?scope=user", "DELETE")
+        assert deleted["removed"], deleted
+        try:
+            urllib.request.urlopen(base + "/api/jobs/..%2Fescape", timeout=5)
             raise AssertionError("path traversal not blocked")
         except urllib.error.HTTPError as e:
             assert e.code in (400, 404), e.code
-        print(f"web ui self-test OK: HTTP 200, {len(body)} bytes, api + sandbox checks passed")
+        print(f"web ui self-test OK: HTTP 200, {len(body)} bytes, "
+              f"api + skills + sandbox checks passed")
     finally:
         httpd.shutdown()
         httpd.server_close()
+        if old_skills is None:
+            os.environ.pop("VIDMILL_SKILLS_DIR", None)
+        else:
+            os.environ["VIDMILL_SKILLS_DIR"] = old_skills
         shutil.rmtree(ROOT, ignore_errors=True)
 
 

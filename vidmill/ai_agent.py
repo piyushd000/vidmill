@@ -16,11 +16,13 @@ export, ...). Your key stays in the environment.
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
 import urllib.request
 
 from . import job as jobmod
+from . import skills as skillsmod
 from . import util
 
 PURPOSE = "AI editor: natural-language changes through any vidmill tool"
@@ -53,6 +55,7 @@ Rules:
   and adapt instead of repeating the same call.
 - Always finish by exporting with preset "final" unless the user asked
   for another preset. Then summarize what changed in one short list.
+{skills}
 """
 
 
@@ -61,6 +64,11 @@ def add_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("prompt", nargs="?", help="what to change, in plain language")
     p.add_argument("--max-steps", type=int, default=MAX_STEPS,
                    help=f"maximum tool-call rounds (default {MAX_STEPS})")
+    p.add_argument("--skill", action="append", default=[], metavar="NAME",
+                   help=(f"load a skill's instructions up front (repeatable, "
+                         f"max {skillsmod.MAX_SELECTED})"))
+    p.add_argument("--no-skills", action="store_true",
+                   help="do not expose editing skills to the model")
     p.add_argument("--dry-run", action="store_true",
                    help="print the request and tool list, make no API call")
 
@@ -72,10 +80,22 @@ def _settings() -> tuple[str, str, str]:
     return base, key, model
 
 
-def _tool_specs() -> list[dict]:
+def _tool_specs(skill_names: list[str] | None = None) -> list[dict]:
     from . import mcp_server
-    specs = mcp_server._specs()  # noqa: SLF001 - same process, one source of truth
-    return [s for name, s in specs.items() if name != "ai"]
+    specs = [copy.deepcopy(s) for name, s in mcp_server._specs().items()
+             if name not in ("ai", "skills")]  # noqa: SLF001 - one source of truth
+    if not skill_names:
+        return [s for s in specs if s["name"] != "skill"]
+    for spec in specs:
+        if spec["name"] == "skill":
+            spec["description"] = (
+                "Load the full instructions for one editing skill. Call this "
+                "when a skill matches the task, then follow it with the normal "
+                "tools. Available skills: " + ", ".join(skill_names))
+            props = spec["inputSchema"].setdefault("properties", {})
+            props["name"] = {"type": "string", "enum": list(skill_names),
+                             "description": "skill name"}
+    return specs
 
 
 def _openai_tools(specs: list[dict]) -> list[dict]:
@@ -89,12 +109,39 @@ def _openai_tools(specs: list[dict]) -> list[dict]:
     } for s in specs]
 
 
-def _messages(j) -> list[dict]:
+def _skills_prompt(selected: list, available: list | None = None) -> str:
+    available = skillsmod.discover() if available is None else available
+    if not available and not selected:
+        return ""
+    lines = [
+        "",
+        "## Editing skills",
+        "Skills are reusable recipes maintained by the user. The list below "
+        "shows only names and descriptions. When a task matches one, call the "
+        "`skill` tool with its name to load the full instructions, then follow "
+        "them with the normal tools. Do not claim to use a skill without "
+        "loading it. Tools and their schemas remain the source of truth.",
+        "",
+    ]
+    for s in available:
+        tags = f" [{', '.join(s.tags)}]" if s.tags else ""
+        lines.append(f"- `{s.name}` — {s.description}{tags}")
+    if selected:
+        lines += ["", "The user attached these skills to this request. Treat "
+                      "their instructions as active:", ""]
+        for s in selected:
+            lines += [f"### {s.name}", s.body.strip(), ""]
+    return "\n".join(lines)
+
+
+def _messages(j, selected: list | None = None,
+              available: list | None = None) -> list[dict]:
     cur = j.current_video()
     info = util.probe_info(cur)
     system = SYSTEM.format(
         job=j.path, video=cur.name, width=info["width"], height=info["height"],
         duration=info["duration"], audio=info["has_audio"],
+        skills=_skills_prompt(selected or [], available),
     )
     return [{"role": "system", "content": system}]
 
@@ -122,15 +169,27 @@ def run(args: argparse.Namespace) -> None:
     if args.max_steps < 1:
         raise util.ToolError("--max-steps must be at least 1")
 
+    if args.skill and args.no_skills:
+        raise util.ToolError("use either --skill or --no-skills, not both")
+
     j = jobmod.Job.load(args.job)
     base, key, model = _settings()
-    specs = _tool_specs()
+    available = [] if args.no_skills else skillsmod.discover()
+    try:
+        selected = [] if args.no_skills else skillsmod.resolve_many(args.skill)
+    except (ValueError, FileNotFoundError) as e:
+        raise util.ToolError(str(e)) from e
+    specs = _tool_specs([s.name for s in available])
     tools = _openai_tools(specs)
-    messages = _messages(j) + [{"role": "user", "content": args.prompt}]
+    messages = _messages(j, selected, available) + [{"role": "user", "content": args.prompt}]
 
     if args.dry_run:
         print(f"AI dry run: {model} at {base}/chat/completions")
         print(f"{len(tools)} tools available: " + ", ".join(s["name"] for s in specs))
+        if available:
+            print(f"{len(available)} skills available: " + ", ".join(s.name for s in available))
+        if selected:
+            print("preloaded skills: " + ", ".join(s.name for s in selected))
         print("\nsystem:\n" + messages[0]["content"])
         print("\nuser:\n" + args.prompt)
         return
@@ -190,7 +249,9 @@ def run(args: argparse.Namespace) -> None:
             messages.append({
                 "role": "tool",
                 "tool_call_id": call.get("id", ""),
-                "content": text[:TOOL_OUTPUT_CHARS],
+                # A skill is instructions the model must follow in full, so it
+                # is exempt from the usual tool-output cap.
+                "content": text if name == "skill" else text[:TOOL_OUTPUT_CHARS],
             })
     else:
         print(f"\nAI: stopped after {args.max_steps} tool rounds.")

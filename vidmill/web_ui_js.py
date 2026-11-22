@@ -3,7 +3,8 @@
 SCRIPT_A = r"""
 var S={job:null,status:null,assets:[],timeline:null,filter:"all",search:"",preview:null,
   timer:null,aiTimer:null,jobsTimer:null,optsLoaded:false,zoom:0,lastSrc:"",artSig:"",
-  aiPending:false,chat:{},dragTl:false,logText:""};
+  aiPending:false,chat:{},dragTl:false,logText:"",aiSkills:[],skills:[],skill:null,
+  skillDirs:{}};
 
 function $(s,r){return (r||document).querySelector(s)}
 function $$(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s))}

@@ -160,6 +160,25 @@
    "engine": "OpenAI-compatible API + the local tool registry"
   },
   {
+   "name": "skills",
+   "cmd": "vmill skills list|show|add|edit|reset|remove|check|path [--all] [--json] [--scope user|project]",
+   "purpose": "List, read and edit reusable AI editing skills (SKILL.md recipes). Bundled skills ship with vidmill; user and project skills override them.",
+   "inputs": {
+    "action": "list|show|add|edit|reset|remove|check|path",
+    "name": "skill name",
+    "--description": "when the AI should use it",
+    "--body/--from": "Markdown instructions",
+    "--scope": "user (default) or project",
+    "--edit": "open in $EDITOR",
+    "--json": "machine-readable output"
+   },
+   "outputs": [
+    "~/.config/vidmill/skills/<name>/SKILL.md",
+    ".vmill/skills/<name>/SKILL.md"
+   ],
+   "engine": "vidmill skills (bundled + user + project discovery)"
+  },
+  {
    "name": "overlay",
    "cmd": "vmill overlay --job <dir> (--image logo.png [--position top-right] [--scale 0.15] [--opacity 0.9] [--at 0] [--to 10] [--fade 0.3] | --video broll.mp4 [--mode pip|cutaway] [--at 5] [--to 11] | --spec overlays.json)",
    "purpose": "Overlay images, logos/watermarks and B-roll onto the current video: picture-in-picture or full-frame cutaway with the main audio kept. Writes overlay_N.mp4 and rebinds the current video, so exports and further edits chain on top.",

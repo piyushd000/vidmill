@@ -113,6 +113,43 @@ _BUILTINS = {
         "_positionals": [],
         "_optmap": {},
     },
+    "skill": {
+        "name": "skill",
+        "description": ("Load the full instructions for one editing skill by name. "
+                        "The `skills` tool lists the catalog."),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"name": {"type": "string", "description": "skill name"}},
+            "required": ["name"],
+        },
+        "_positionals": [],
+        "_optmap": {},
+    },
+    "skills": {
+        "name": "skills",
+        "description": ("List, read, add, edit, reset or remove reusable editing "
+                        "skills (SKILL.md recipes). Bundled skills ship with "
+                        "vidmill; user and project skills override them."),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string",
+                           "enum": ["list", "show", "add", "edit", "reset", "remove",
+                                    "path", "check"]},
+                "name": {"type": "string", "description": "skill name"},
+                "description": {"type": "string",
+                                "description": "one line: when the AI should use it"},
+                "body": {"type": "string", "description": "Markdown instructions"},
+                "tags": {"type": "array", "items": {"type": "string"}},
+                "scope": {"type": "string", "enum": ["user", "project", "all"],
+                          "description": "where to read or write (default user)"},
+                "json": {"type": "boolean", "description": "JSON output for list/show/path"},
+            },
+            "required": ["action"],
+        },
+        "_positionals": [],
+        "_optmap": {},
+    },
 }
 
 
@@ -154,7 +191,96 @@ def _argv(name: str, spec: dict, args: dict) -> list[str]:
     return argv
 
 
+def _call_skill(args: dict) -> dict:
+    from . import skills as skills_mod
+    try:
+        skill = skills_mod.load(args.get("name") or "")
+    except (ValueError, FileNotFoundError) as e:
+        return _error(str(e))
+    text = f"# {skill.name}\n{skill.description}\n\n{skill.body}".strip()
+    return {"content": [{"type": "text", "text": text}], "isError": False}
+
+
+def _call_skills(args: dict) -> dict:
+    from . import skills as skills_mod
+    action = str(args.get("action") or "list").lower()
+    name = args.get("name")
+    scope = str(args.get("scope") or "user").lower()
+    try:
+        if action == "list":
+            found, warnings = skills_mod.discover_with_warnings()
+            if args.get("json"):
+                text = json.dumps({"skills": [skills_mod.summary(s) for s in found],
+                                   "warnings": warnings}, indent=1)
+            else:
+                lines = [f"{len(found)} editing skills"]
+                for s in found:
+                    tags = f" [{', '.join(s.tags)}]" if s.tags else ""
+                    lines.append(f"- {s.name} ({s.source}) — {s.description}{tags}")
+                if warnings:
+                    lines.append("")
+                    lines += [f"warning: {w['path']}: {w['error']}" for w in warnings]
+                text = "\n".join(lines)
+        elif action == "show":
+            if not name:
+                return _error("skills show needs 'name'")
+            skill = skills_mod.load(str(name))
+            text = json.dumps({**skills_mod.summary(skill), "body": skill.body},
+                              indent=1) if args.get("json") else skill.raw
+        elif action == "add":
+            if not name:
+                return _error("skills add needs 'name'")
+            if not args.get("description") or not args.get("body"):
+                return _error("skills add needs 'description' and 'body'")
+            skill = skills_mod.upsert(str(name), str(args["description"]),
+                                      str(args["body"]), args.get("tags") or (),
+                                      scope)
+            text = f"created skill {skill.name!r}\n{skill.path}"
+        elif action == "edit":
+            if not name:
+                return _error("skills edit needs 'name'")
+            if (args.get("description") is None and args.get("body") is None
+                    and args.get("tags") is None):
+                return _error("skills edit needs description, body or tags")
+            skill = skills_mod.update(str(name), args.get("description"),
+                                      args.get("body"), args.get("tags"), scope)
+            text = f"updated skill {skill.name!r}\n{skill.path}"
+        elif action == "reset":
+            if not name:
+                return _error("skills reset needs 'name'")
+            scopes = ("user", "project") if scope == "all" else (scope,)
+            removed = skills_mod.reset(str(name), scopes)
+            if not removed:
+                effective = skills_mod.find(str(name))
+                text = (f"{name!r} already uses the {effective.source} skill"
+                        if effective else f"no skill named {name!r}")
+            else:
+                text = "\n".join(f"removed {p}" for p in removed)
+        elif action == "remove":
+            if not name:
+                return _error("skills remove needs 'name'")
+            text = f"removed {skills_mod.remove(str(name), scope)}"
+        elif action == "path":
+            roots = {k: str(v) for k, v in skills_mod.roots().items()}
+            text = json.dumps(roots, indent=1) if args.get("json") else \
+                "\n".join(f"{k}: {v}" for k, v in roots.items())
+        elif action == "check":
+            found, warnings = skills_mod.scan()
+            text = f"checked {len(found)} skill files; {len(warnings)} warning(s)"
+            if warnings:
+                text += "\n" + "\n".join(f"- {w['path']}: {w['error']}" for w in warnings)
+        else:
+            return _error(f"unknown skills action {action!r}")
+    except (ValueError, FileNotFoundError) as e:
+        return _error(str(e))
+    return {"content": [{"type": "text", "text": text or "(no output)"}], "isError": False}
+
+
 def _call_builtin(name: str, args: dict) -> dict:
+    if name == "skill":
+        return _call_skill(args)
+    if name == "skills":
+        return _call_skills(args)
     from .cli import doctor_cmd, status_cmd
     if name == "status":
         job = args.get("job")

@@ -29,3 +29,6 @@ vmill = "vidmill.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["vidmill*"]
+
+[tool.setuptools.package-data]
+vidmill = ["assets/*.json", "skill_data/*/SKILL.md"]

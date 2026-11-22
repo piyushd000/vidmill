@@ -200,7 +200,7 @@ async function openJob(name){
 /* --------------------------------------------------------------- ai chat */
 var AI_EMPTY='<div class="ai-empty" id="aiEmpty"><div class="big">✦</div>'+
   '<h4>Custom edits, in words</h4><p>The AI can call any vidmill tool — trim, captions, '+
-  'overlays, music, HyperFrames, export. It only runs when you ask.</p></div>';
+  'overlays, music, HyperFrames, export. Attach a skill when you want a proven recipe.</p></div>';
 function chatKey(){return "vmill.chat."+S.job}
 function loadChat(){
   S.chat=[];
@@ -272,6 +272,7 @@ async function sendPrompt(text){
   var s=S.status||{};
   if(!s.ai_available){toast("Set VIDMILL_AI_KEY (or OPENAI_API_KEY) in the server environment","warn");return}
   if(s.running){toast("Wait for the free pass to finish","warn");return}
+  var useSkills=S.aiSkills.slice();
   S.chat.push({role:"user",text:p,ts:Date.now()});
   S.chat.push({role:"bot",text:"Working on it…",ts:Date.now(),work:true});
   S.aiPending=true;saveChat();renderChat();
@@ -280,7 +281,9 @@ async function sendPrompt(text){
   $("#aiLog").textContent="starting the AI editor…";
   try{
     await api("/api/jobs/"+enc(S.job)+"/ai",{method:"POST",
-      headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt:p})});
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({prompt:p,skills:useSkills})});
+    S.aiSkills=[];renderAISkills();
     pollAI();
   }catch(e){
     S.aiPending=false;finishAIMsg("Could not start the AI: "+String(e.message||e));
@@ -296,6 +299,177 @@ function bindAI(){
     var b=e.target.closest(".chip");if(!b)return;
     sendPrompt(b.getAttribute("data-prompt")||b.textContent);
   });
+}
+
+/* --------------------------------------------------------------- skills */
+function skillByName(name){
+  for(var i=0;i<S.skills.length;i++)if(S.skills[i].name===name)return S.skills[i];
+  return null;
+}
+function renderAISkills(){
+  var box=$("#aiSkills");if(!box)return;
+  box.innerHTML="";
+  if(!S.aiSkills.length){box.classList.add("hidden");return}
+  box.classList.remove("hidden");
+  var lead=document.createElement("span");lead.className="ai-skills-label";lead.textContent="Skills";box.appendChild(lead);
+  S.aiSkills.forEach(function(name){
+    var b=document.createElement("button");b.type="button";b.className="ai-skill-tag";
+    var meta=skillByName(name);b.title=meta?meta.description:"Remove from this request";
+    b.textContent=name+" ×";
+    b.onclick=function(){toggleAISkill(name)};
+    box.appendChild(b);
+  });
+}
+function toggleAISkill(name){
+  if(!name)return;
+  var i=S.aiSkills.indexOf(name);
+  if(i>=0)S.aiSkills.splice(i,1);
+  else{
+    if(S.aiSkills.length>=4){toast("Attach up to 4 skills to one request","warn");return}
+    S.aiSkills.push(name);
+  }
+  renderAISkills();
+  if(S.skill&&S.skill.name===name)
+    $("#skillUse").textContent=i>=0?"Use in AI":"Remove from request";
+}
+async function refreshSkills(){
+  try{
+    var d=await api("/api/skills");
+    S.skills=d.skills||[];S.skillDirs=d.dirs||{};
+    $("#skillCount").textContent=String(S.skills.length);
+    var dirs=$("#skillDirs");dirs.innerHTML="";
+    ["bundled","user","project"].forEach(function(scope){
+      if(!S.skillDirs[scope])return;
+      var row=document.createElement("div");row.textContent=scope+": "+S.skillDirs[scope];
+      dirs.appendChild(row);
+    });
+    if(!$("#modalSkills").classList.contains("hidden"))renderSkillList();
+    return d;
+  }catch(e){return null}
+}
+function renderSkillList(){
+  var box=$("#skillList");if(!box)return;
+  var q=($("#skillSearch").value||"").toLowerCase();
+  box.innerHTML="";
+  var list=(S.skills||[]).filter(function(s){
+    return !q||s.name.toLowerCase().indexOf(q)>=0||
+      (s.description||"").toLowerCase().indexOf(q)>=0||
+      (s.tags||[]).join(" ").toLowerCase().indexOf(q)>=0;
+  });
+  if(!list.length){box.innerHTML='<div class="skills-empty">No skills match.</div>';return}
+  list.forEach(function(s){
+    var b=document.createElement("button");b.type="button";
+    b.className="skill-row"+(S.skill&&S.skill.name===s.name?" sel":"");
+    var h=document.createElement("div");h.className="skill-row-h";
+    var n=document.createElement("b");n.textContent=s.name;
+    var src=document.createElement("span");src.className="src "+(s.source||"bundled");
+    src.textContent=s.source||"bundled";h.appendChild(n);h.appendChild(src);
+    var p=document.createElement("p");p.textContent=s.description||"";
+    b.appendChild(h);b.appendChild(p);
+    b.title=s.description||s.name;
+    b.onclick=function(){selectSkill(s.name)};
+    box.appendChild(b);
+  });
+}
+function fillSkill(d){
+  S.skill=d;
+  $("#skillPlaceholder").classList.add("hidden");
+  $("#skillForm").classList.remove("hidden");
+  var name=d.name||"",isNew=d.source==="new";
+  $("#skillName").value=name;$("#skillName").readOnly=!isNew;
+  $("#skillDesc").value=d.description||"";
+  $("#skillTags").value=(d.tags||[]).join(", ");
+  $("#skillBody").value=d.body||"";
+  $("#skillSource").textContent=d.source||"new";
+  $("#skillSource").className="tag "+(d.source||"new");
+  $("#skillPath").textContent=d.path||"not saved yet";
+  var hasBundled=d.overrides==="bundled";
+  var writable=!isNew&&d.source!=="bundled";
+  $("#skillReset").classList.toggle("hidden",!writable||!hasBundled);
+  $("#skillDelete").classList.toggle("hidden",!writable||hasBundled);
+  $("#skillUse").classList.toggle("hidden",isNew||!name);
+  $("#skillUse").textContent=S.aiSkills.indexOf(name)>=0?"Remove from request":"Use in AI";
+  $("#skillMsg").textContent="";
+  $("#skillSearch").value="";
+}
+async function selectSkill(name){
+  try{
+    var d=await api("/api/skills/"+enc(name));
+    fillSkill(d.skill);renderSkillList();
+  }catch(e){toast(String(e.message||e),"err")}
+}
+function newSkill(){
+  fillSkill({name:"",description:"",tags:[],body:"",source:"new",path:""});
+  $("#skillName").readOnly=false;$("#skillName").focus();
+}
+function resetSkillEditor(){
+  S.skill=null;
+  $("#skillForm").classList.add("hidden");
+  $("#skillPlaceholder").classList.remove("hidden");
+  renderSkillList();
+}
+async function saveSkill(){
+  var isNew=!S.skill||S.skill.source==="new";
+  var name=$("#skillName").value.trim().toLowerCase();
+  var description=$("#skillDesc").value.trim();
+  var body=$("#skillBody").value.trim();
+  var tags=$("#skillTags").value.split(",").map(function(x){return x.trim()}).filter(Boolean);
+  var msg=$("#skillMsg");msg.textContent="";
+  if(!name){msg.textContent="Give the skill a name.";return}
+  if(!description){msg.textContent="Add a line that tells the AI when to use it.";return}
+  if(!body){msg.textContent="Add the Markdown instructions.";return}
+  var existing=isNew?skillByName(name):null;
+  var scope=(!isNew&&S.skill.source==="project")||
+    (existing&&existing.source==="project")?"project":"user";
+  if(existing&&!confirm("A "+existing.source+" skill named \""+name+"\" already exists. Save your version in the "+scope+" scope?"))return;
+  var payload={name:name,description:description,tags:tags,body:body,scope:scope};
+  $("#skillSave").disabled=true;
+  try{
+    var d;
+    if(isNew)d=await api("/api/skills",{method:"POST",
+      headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    else d=await api("/api/skills/"+enc(S.skill.name),{method:"PUT",
+      headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    fillSkill(d.skill);
+    await refreshSkills();
+    renderSkillList();
+    toast("Skill saved","ok");
+  }catch(e){msg.textContent=String(e.message||e)}
+  $("#skillSave").disabled=false;
+}
+async function resetSkill(){
+  if(!S.skill||!S.skill.name||S.skill.source==="bundled")return;
+  var scope=S.skill.source==="project"?"project":"user";
+  if(!confirm("Remove the "+scope+" override for \""+S.skill.name+"\" and restore the bundled skill?"))return;
+  try{
+    var d=await api("/api/skills/"+enc(S.skill.name)+"/reset",{method:"POST",
+      headers:{"Content-Type":"application/json"},body:JSON.stringify({scope:scope})});
+    await refreshSkills();
+    if(d.skill)fillSkill(d.skill);else resetSkillEditor();
+    renderSkillList();toast("Skill reset","ok");
+  }catch(e){$("#skillMsg").textContent=String(e.message||e)}
+}
+async function deleteSkill(){
+  if(!S.skill||!S.skill.name||S.skill.source==="bundled"||S.skill.source==="new")return;
+  var scope=S.skill.source==="project"?"project":"user";
+  if(!confirm("Delete the "+scope+" skill \""+S.skill.name+"\"?"))return;
+  try{
+    await api("/api/skills/"+enc(S.skill.name)+"?scope="+enc(scope),{method:"DELETE"});
+    resetSkillEditor();await refreshSkills();renderSkillList();toast("Skill deleted","ok");
+  }catch(e){$("#skillMsg").textContent=String(e.message||e)}
+}
+function openSkills(){
+  showModal("modalSkills");
+  refreshSkills().then(function(){renderSkillList()});
+}
+function bindSkills(){
+  $("#btnSkills").onclick=openSkills;
+  $("#skillNew").onclick=newSkill;
+  $("#skillSave").onclick=saveSkill;
+  $("#skillUse").onclick=function(){if(S.skill)toggleAISkill(S.skill.name)};
+  $("#skillReset").onclick=resetSkill;
+  $("#skillDelete").onclick=deleteSkill;
+  $("#skillSearch").addEventListener("input",renderSkillList);
 }
 
 /* ------------------------------------------------------------- new/edit */
@@ -458,7 +632,8 @@ function bindKeys(){
   });
 }
 function boot(){
-  bindMonitor();bindTimeline();bindAI();bindModals();bindAssets();bindKeys();
+  bindMonitor();bindTimeline();bindAI();bindSkills();bindModals();bindAssets();bindKeys();
+  renderAISkills();refreshSkills();
   var act=$("#activity");
   try{
     if(localStorage.getItem("vmill.act")==="0")act.classList.add("collapsed");

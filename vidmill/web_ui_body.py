@@ -161,16 +161,19 @@ BODY = r"""
     <aside class="col right">
       <div class="ai-head"><div class="ai-orb">✦</div>
         <div><b>AI editor</b><small id="aiModel">not connected</small></div>
-        <div class="grow"></div><span class="dot" id="aiDot"></span></div>
+        <div class="grow"></div>
+        <button class="skill-btn" id="btnSkills" title="Browse, edit and attach editing skills">Skills <b id="skillCount">0</b></button>
+        <span class="dot" id="aiDot"></span></div>
       <div class="ai-feed" id="aiFeed">
         <div class="ai-empty" id="aiEmpty"><div class="big">✦</div>
           <h4>Custom edits, in words</h4>
-          <p>The AI can call any vidmill tool — trim, captions, overlays, music, HyperFrames, export. It only runs when you ask.</p></div>
+          <p>The AI can call any vidmill tool — trim, captions, overlays, music, HyperFrames, export. Skills are reusable recipes it can load when they match. It only runs when you ask.</p></div>
       </div>
       <div class="ai-run hidden" id="aiRun">
         <div class="ai-run-h">Run output <span class="grow"></span><span id="aiRunState">idle</span></div>
         <pre id="aiLog"></pre>
       </div>
+      <div class="ai-skills hidden" id="aiSkills"></div>
       <div class="chips" id="aiChips">
         <button class="chip" data-prompt="Cut the pause at the beginning of the video.">Trim the start</button>
         <button class="chip" data-prompt="Remove the watermark from this video.">Remove watermark</button>
@@ -239,6 +242,44 @@ BODY = r"""
     <div class="m-foot"><button class="btn danger" id="cancelRun">Cancel run</button><span class="grow"></span>
       <button class="btn" data-close="modalSettings">Close</button>
       <button class="btn primary" id="run">Apply &amp; re-run</button></div>
+  </div>
+</div>
+
+<div class="backdrop hidden" id="modalSkills">
+  <div class="modal wide" role="dialog" aria-modal="true" aria-label="Editing skills">
+    <div class="m-head"><div><h2>Skills</h2><p>Reusable recipes the AI loads on demand. Bundled skills can be overridden; edits are stored as plain Markdown.</p></div>
+      <div class="grow"></div><button class="m-x" data-close="modalSkills" title="Close"><svg class="icon"><use href="#i-x"/></svg></button></div>
+    <div class="m-body">
+      <div class="skills-layout">
+        <div class="skills-side">
+          <div class="skills-toolbar"><input id="skillSearch" placeholder="Search skills" autocomplete="off"><button class="btn sm" id="skillNew">New</button></div>
+          <div class="skills-list" id="skillList"></div>
+          <div class="skills-dirs" id="skillDirs"></div>
+        </div>
+        <div class="skills-editor">
+          <div class="skills-placeholder" id="skillPlaceholder"><div class="big">✦</div>
+            <b>Pick a skill</b>
+            <p>Read the instructions, tweak them for your workflow, or start a new skill. Attach up to four skills to an AI request with <em>Use in AI</em>.</p></div>
+          <div class="skill-form hidden" id="skillForm">
+            <div class="skill-form-head"><span class="tag" id="skillSource">bundled</span><span class="skill-path" id="skillPath"></span></div>
+            <div class="field"><label>Name</label><input id="skillName" placeholder="my-house-style" autocomplete="off" spellcheck="false"></div>
+            <div class="field"><label>When to use it</label><input id="skillDesc" placeholder="One line that tells the AI when this skill applies" autocomplete="off"></div>
+            <div class="field"><label>Tags</label><input id="skillTags" placeholder="cut, captions, social" autocomplete="off"></div>
+            <div class="field"><label>Instructions · Markdown</label><textarea id="skillBody" spellcheck="false" placeholder="# My skill&#10;&#10;When to use...&#10;&#10;## Steps&#10;..."></textarea></div>
+            <div class="skill-actions">
+              <button class="btn sm" id="skillUse">Use in AI</button>
+              <button class="btn sm" id="skillDelete">Delete skill</button>
+              <span class="grow"></span>
+              <button class="btn sm" id="skillReset">Reset to bundled</button>
+              <button class="btn primary sm" id="skillSave">Save</button>
+            </div>
+            <div class="skill-msg" id="skillMsg"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="m-foot"><span class="hint" id="skillFoot">Bundled skills ship with vidmill. Saving an edit creates or updates a user override; the bundled file is never changed.</span><span class="grow"></span>
+      <button class="btn" data-close="modalSkills">Close</button></div>
   </div>
 </div>
 
